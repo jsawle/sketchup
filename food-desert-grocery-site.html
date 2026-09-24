@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+<title>Grocery Store Site Challenge</title>
+<!-- ArcGIS Maps SDK for JavaScript 5.1 (components + core, single entry point). No API key needed: all layers are public. -->
+<script type="module" src="https://js.arcgis.com/5.1/"></script>
+<style>
+  :root {
+    --ink: #1d2433; --muted: #5b6475; --line: #dde2ea; --bg: #f6f7f9; --panel: #ffffff;
+    --desert: #c8322d; --access: #f08c2e; --income: #7b5ea7; --ok: #cfd6df;
+    --full: #1a8f4a; --grocery: #6fbf73; --conv: #8a8f98; --transit: #2a6fdb;
+    --siteA: #0b6e99; --siteB: #b8570f; --siteC: #6a3fb5;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg); }
+  #app { display: flex; height: 100%; }
+  #panel { width: 400px; min-width: 340px; height: 100%; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); padding: 16px 18px 40px; }
+  #mapwrap { flex: 1; position: relative; }
+  arcgis-scene { width: 100%; height: 100%; display: block; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 22px 0 8px; display: flex; align-items: center; gap: 8px; }
+  h2 .step { background: var(--ink); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; flex: none; }
+  p, li, label, td, th { font-size: 13.5px; line-height: 1.45; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  select, button, input[type=text], textarea { font: inherit; font-size: 13.5px; }
+  select, input[type=text], textarea { width: 100%; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  textarea { min-height: 90px; resize: vertical; }
+  button { padding: 7px 12px; border-radius: 6px; border: 1px solid var(--ink); background: var(--ink); color: #fff; cursor: pointer; }
+  button.ghost { background: #fff; color: var(--ink); border-color: var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; background: #fff; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat { background: var(--bg); border-radius: 6px; padding: 8px; }
+  .stat b { display: block; font-size: 18px; }
+  .stat span { font-size: 11.5px; color: var(--muted); }
+  .legend div { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin: 3px 0; }
+  .sw { width: 14px; height: 14px; border-radius: 3px; flex: none; border: 1px solid rgba(0,0,0,.15); }
+  .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+  .slider label { display: flex; justify-content: space-between; }
+  input[type=range] { width: 100%; }
+  .site-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .badge { color: #fff; font-weight: 700; border-radius: 4px; padding: 1px 7px; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 5px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar { height: 6px; border-radius: 3px; background: var(--line); margin-top: 3px; }
+  .bar > i { display: block; height: 100%; border-radius: 3px; }
+  .choice { display: flex; gap: 10px; margin: 6px 0; }
+  .choice label { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; flex: 1; text-align: center; }
+  .choice input { margin-right: 4px; }
+  #status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(29,36,51,.92); color: #fff; padding: 7px 14px; border-radius: 20px; font-size: 13px; z-index: 5; max-width: 90%; text-align: center; pointer-events: none; transition: opacity .3s; }
+  #status.hide { opacity: 0; }
+  #movehint { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: #fff8d6; border: 1px solid #e3c95a; padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 5; display: none; }
+  details summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+  .note { background: #f3f6fb; border-left: 3px solid var(--transit); padding: 8px 10px; border-radius: 4px; }
+  .warn { background: #fff4e5; border-left: 3px solid var(--access); padding: 8px 10px; border-radius: 4px; }
+  @media (max-width: 820px) {
+    #app { flex-direction: column-reverse; }
+    #mapwrap { height: 55vh; flex: none; }
+    #panel { width: 100%; min-width: 0; height: auto; flex: 1; border-right: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="panel">
+    <h1>Grocery Store Site Challenge</h1>
+    <p class="muted">A supermarket chain wants to open one new store to serve a community that lacks healthy food. Use real data to find the food desert, compare three possible sites, and recommend one.</p>
+
+    <h2><span class="step">1</span>Choose a community</h2>
+    <select id="community"></select>
+    <div class="row" style="margin-top:6px">
+      <button id="analyse">Analyse</button>
+      <button id="analyseHere" class="ghost" title="Analyse the area at the centre of the map">Analyse map centre</button>
+    </div>
+    <p class="small muted">Tip: navigate anywhere in the United States and press “Analyse map centre” to study your own community.</p>
+    <div id="summary"></div>
+
+    <h2><span class="step">2</span>Define the food desert</h2>
+    <p class="small">The U.S. Department of Agriculture calls an urban census tract a <b>low-income, low-access</b> area when many people are poor <i>and</i> live more than a mile from a supermarket. Adjust the rules and watch the map change.</p>
+    <div class="card slider">
+      <label>Low income: poverty rate at least <b><span id="povVal">20</span>%</b></label>
+      <input id="pov" type="range" min="10" max="40" step="1" value="20" />
+      <label>Low access: more than <b><span id="distVal">1.0</span> mile(s)</b> to a full-service store</label>
+      <input id="dist" type="range" min="0.5" max="3" step="0.25" value="1" />
+      <label style="justify-content:flex-start;gap:6px"><input id="incGrocery" type="checkbox" /> Count SNAP “Grocery Stores” as full-service</label>
+    </div>
+    <label class="small">Colour census tracts by</label>
+    <select id="colourBy">
+      <option value="status">Food desert status</option>
+      <option value="pov">Poverty rate (%)</option>
+      <option value="noveh">Households without a vehicle (%)</option>
+      <option value="dist">Distance to nearest full-service store (miles)</option>
+    </select>
+    <div id="legend" class="legend card"></div>
+
+    <details class="card">
+      <summary>Map layers</summary>
+      <div style="margin-top:6px">
+        <label><input type="checkbox" id="lyrTracts" checked /> Census tracts (ACS)</label><br />
+        <label><input type="checkbox" id="lyrStores" checked /> Food stores (SNAP retailers)</label><br />
+        <label><input type="checkbox" id="lyrStops" checked /> Transit stops</label><br />
+        <label><input type="checkbox" id="lyrRoutes" checked /> Transit routes</label><br />
+        <label><input type="checkbox" id="lyrBuildings" checked /> 3D buildings</label><br />
+        <label class="small" style="display:block;margin-top:6px">Basemap</label>
+        <select id="basemap">
+          <option value="gray-vector">Light gray</option>
+          <option value="hybrid">Imagery with labels</option>
+          <option value="topo-vector">Topographic</option>
+        </select>
+      </div>
+    </details>
+
+    <h2><span class="step">3</span>Compare three sites</h2>
+    <p class="small">Three sites are proposed from the data, in the most underserved tracts. Fly to each one to see it among the real buildings. You can move a site if you find a better spot.</p>
+    <div id="sites"></div>
+    <div id="compare"></div>
+
+    <h2><span class="step">4</span>Make your recommendation</h2>
+    <div class="choice" id="choice"></div>
+    <label class="small">Explain your choice using evidence from the data. What trade-offs did you make?</label>
+    <textarea id="why" placeholder="We recommend Site … because …"></textarea>
+    <label class="small" style="margin-top:6px;display:block">Your name or team</label>
+    <input id="team" type="text" />
+    <div class="row" style="margin-top:8px">
+      <button id="download">Download my decision</button>
+    </div>
+    <p class="small muted">Your decision is saved as a file on this device. Nothing is sent anywhere and no account is needed.</p>
+
+    <h2><span class="step">?</span>Think deeper</h2>
+    <ul class="small">
+      <li>Which site helps the most people who do not have a car? Why does that matter?</li>
+      <li>Is the site with the most people nearby always the best choice?</li>
+      <li>Change the poverty or distance rule. Does the food desert grow or shrink? Who decides the rule?</li>
+      <li>What does this data <i>not</i> tell you? (Store prices? Opening hours? Safety of the walk?)</li>
+    </ul>
+
+    <details class="card">
+      <summary>About the data and method</summary>
+      <div class="small" style="margin-top:6px">
+        <p><b>Census tracts:</b> U.S. Census Bureau American Community Survey 5-year estimates via ArcGIS Living Atlas (tables B17020 poverty, B08201 vehicles available). Estimates have margins of error.</p>
+        <p><b>Food stores:</b> USDA SNAP authorized retailer locations. “Full-service” means SNAP store type Supermarket or Super Store.</p>
+        <p><b>Transit:</b> U.S. DOT Bureau of Transportation Statistics National Transit Map (stops and routes).</p>
+        <p><b>3D buildings:</b> Esri 3D Buildings scene layer, ArcGIS Living Atlas.</p>
+        <p><b>Simplifications:</b> USDA’s official Food Access Research Atlas measures distance from every half-kilometre grid cell and also uses median family income. This app measures from the centre of each tract, uses the poverty rate only, and counts people in tracts whose centre is within 1 mile of a site. Results are for learning, not official designations.</p>
+      </div>
+    </details>
+  </aside>
+
+  <div id="mapwrap">
+    <arcgis-scene id="scene" basemap="gray-vector" ground="world-elevation"
+      camera-position="-96.76, 32.70, 9000" camera-tilt="50">
+      <arcgis-zoom slot="top-right"></arcgis-zoom>
+      <arcgis-navigation-toggle slot="top-right"></arcgis-navigation-toggle>
+      <arcgis-compass slot="top-right"></arcgis-compass>
+    </arcgis-scene>
+    <div id="status">Loading map…</div>
+    <div id="movehint">Click on the map to place <b id="moveLabel"></b>. <a href="#" id="cancelMove">Cancel</a></div>
+  </div>
+</div>
+
+<script type="module">
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+const COMMUNITIES = [
+  { name: "South Dallas, Texas", lon: -96.752, lat: 32.765 },
+  { name: "West Baltimore, Maryland", lon: -76.643, lat: 39.300 },
+  { name: "South Memphis, Tennessee", lon: -90.040, lat: 35.100 },
+  { name: "Southeast Washington, D.C.", lon: -76.985, lat: 38.862 }
+];
+const RADIUS_M = 5000;           // analysis area around the community centre
+const STORE_BUFFER_M = 3000;     // look this far beyond the area for existing stores
+const MILE = 1609.344;
+const WALK_M = 400;              // quarter mile, for transit stops near a site
+
+const URLS = {
+  vehicles: "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/ACS_Vehicle_Availability_Boundaries/FeatureServer/2",
+  poverty:  "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/ACS_Poverty_by_Age_Boundaries/FeatureServer/2",
+  snap:     "https://services1.arcgis.com/RLQu0rK7h4kbsBq5/arcgis/rest/services/snap_retailer_location_data/FeatureServer/0",
+  stops:    "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_National_Transit_Map_Stops/FeatureServer/0",
+  routes:   "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_National_Transit_Map_Routes/FeatureServer/0",
+  buildings:"https://basemaps3d.arcgis.com/arcgis/rest/services/Esri3D_Buildings_v1/SceneServer"
+};
+const SITE_COLOURS = { A: "#0b6e99", B: "#b8570f", C: "#6a3fb5" };
+const STATUS_COLOURS = { desert: "#c8322d", access: "#f08c2e", income: "#7b5ea7", ok: "#cfd6df" };
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+const state = {
+  centre: null, tracts: [], stores: [], stops: [], sites: [],
+  moving: null, rules: { pov: 20, distMi: 1, incGrocery: false }, colourBy: "status"
+};
+
+const $ = (id) => document.getElementById(id);
+const statusEl = $("status");
+function setStatus(msg, persist) {
+  statusEl.textContent = msg; statusEl.classList.remove("hide");
+  clearTimeout(setStatus._t);
+  if (!persist) setStatus._t = setTimeout(() => statusEl.classList.add("hide"), 3500);
+}
+const fmt = (n) => (n == null || isNaN(n)) ? "–" : Math.round(n).toLocaleString("en-US");
+const fmt1 = (n) => (n == null || isNaN(n)) ? "–" : (Math.round(n * 10) / 10).toFixed(1);
+
+// ---------------------------------------------------------------------------
+// Geometry helpers (plain maths, no geometry engine needed)
+// ---------------------------------------------------------------------------
+function haversine(lon1, lat1, lon2, lat2) {
+  const R = 6371008.8, r = Math.PI / 180;
+  const dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+function circleRing(lon, lat, radiusM, n = 72) {
+  const R = 6371008.8, r = Math.PI / 180, d = radiusM / R, ring = [];
+  for (let i = 0; i <= n; i++) {
+    const brg = (i / n) * 2 * Math.PI;
+    const lat2 = Math.asin(Math.sin(lat * r) * Math.cos(d) + Math.cos(lat * r) * Math.sin(d) * Math.cos(brg));
+    const lon2 = lon * r + Math.atan2(Math.sin(brg) * Math.sin(d) * Math.cos(lat * r), Math.cos(d) - Math.sin(lat * r) * Math.sin(lat2));
+    ring.push([lon2 / r, lat2 / r]);
+  }
+  return ring;
+}
+function rectRing(lon, lat, wM, hM) {
+  const dLat = hM / 2 / 111320, dLon = wM / 2 / (111320 * Math.cos(lat * Math.PI / 180));
+  return [[lon - dLon, lat - dLat], [lon - dLon, lat + dLat], [lon + dLon, lat + dLat], [lon + dLon, lat - dLat], [lon - dLon, lat - dLat]];
+}
+function ringCentroid(rings) {
+  let x = 0, y = 0, n = 0;
+  for (const p of rings[0]) { x += p[0]; y += p[1]; n++; }
+  return { x: x / n, y: y / n };
+}
+
+// ---------------------------------------------------------------------------
+// REST queries (paged)
+// ---------------------------------------------------------------------------
+async function queryAll(url, params, pageSize) {
+  let offset = 0; const out = [];
+  for (let guard = 0; guard < 60; guard++) {
+    const p = new URLSearchParams({ ...params, resultOffset: offset, resultRecordCount: pageSize, f: "json" });
+    const res = await fetch(`${url}/query?${p}`);
+    const j = await res.json();
+    if (j.error) throw new Error(j.error.message || "Query failed");
+    const feats = j.features || [];
+    out.push(...feats);
+    if (feats.length === 0 || (!j.exceededTransferLimit && feats.length < pageSize)) break;
+    offset += feats.length;
+  }
+  return out;
+}
+function nearParams(lon, lat, distM) {
+  return {
+    geometry: `${lon},${lat}`, geometryType: "esriGeometryPoint", inSR: "4326",
+    spatialRel: "esriSpatialRelIntersects", distance: String(distM), units: "esriSRUnit_Meter", outSR: "4326"
+  };
+}
+
+async function loadTracts(lon, lat) {
+  const veh = await queryAll(URLS.vehicles, {
+    ...nearParams(lon, lat, RADIUS_M), where: "1=1",
+    outFields: "GEOID,NAME,County,State,B08201_001E,B08201_002E,B08201_calc_pctNoVehE",
+    returnGeometry: "true", returnCentroid: "true", maxAllowableOffset: "0.0001", geometryPrecision: "6"
+  }, 50);
+  const geoids = veh.map((f) => f.attributes.GEOID).filter(Boolean);
+  const pov = {};
+  for (let i = 0; i < geoids.length; i += 80) {
+    const chunk = geoids.slice(i, i + 80).map((g) => `'${g}'`).join(",");
+    const rows = await queryAll(URLS.poverty, {
+      where: `GEOID IN (${chunk})`, outFields: "GEOID,B17020_001E,B17020_002E,B17020_calc_pctPovE", returnGeometry: "false"
+    }, 2000);
+    rows.forEach((r) => (pov[r.attributes.GEOID] = r.attributes));
+  }
+  return veh.filter((f) => f.geometry && f.geometry.rings).map((f, i) => {
+    const a = f.attributes, p = pov[a.GEOID] || {};
+    const c = (f.centroid && isFinite(f.centroid.x)) ? f.centroid : ringCentroid(f.geometry.rings);
+    return {
+      oid: i + 1, geoid: a.GEOID, name: a.NAME, county: a.County, state: a.State,
+      rings: f.geometry.rings, cx: c.x, cy: c.y,
+      hh: a.B08201_001E || 0, noveh: a.B08201_002E || 0, novehPct: a.B08201_calc_pctNoVehE,
+      pop: p.B17020_001E || 0, poor: p.B17020_002E || 0, povPct: p.B17020_calc_pctPovE
+    };
+  });
+}
+
+async function loadStores(lon, lat) {
+  const feats = await queryAll(URLS.snap, {
+    ...nearParams(lon, lat, RADIUS_M + STORE_BUFFER_M),
+    where: "Store_Type <> 'Restaurant Meals Program'",
+    outFields: "Store_Name,Store_Type,Store_Street_Address,City", returnGeometry: "true"
+  }, 1000);
+  return feats.filter((f) => f.geometry).map((f, i) => ({
+    oid: i + 1, x: f.geometry.x, y: f.geometry.y,
+    name: f.attributes.Store_Name, type: f.attributes.Store_Type || "Other",
+    address: [f.attributes.Store_Street_Address, f.attributes.City].filter(Boolean).join(", ")
+  }));
+}
+
+async function loadStops(lon, lat) {
+  const feats = await queryAll(URLS.stops, {
+    ...nearParams(lon, lat, RADIUS_M + 1000), where: "1=1",
+    outFields: "stop_name,stop_type_text", returnGeometry: "true"
+  }, 2000);
+  return feats.filter((f) => f.geometry).map((f) => ({ x: f.geometry.x, y: f.geometry.y, name: f.attributes.stop_name, type: f.attributes.stop_type_text }));
+}
+
+// ---------------------------------------------------------------------------
+// Analysis
+// ---------------------------------------------------------------------------
+function isFullService(type) {
+  return type === "Supermarket" || type === "Super Store" || (state.rules.incGrocery && type === "Grocery Store");
+}
+const MAX_SEARCH_M = RADIUS_M + STORE_BUFFER_M;  // stores are only loaded this far out
+function nearestFull(lon, lat, extraSites = []) {
+  let best = Infinity;
+  for (const s of state.stores) if (isFullService(s.type)) best = Math.min(best, haversine(lon, lat, s.x, s.y));
+  for (const s of extraSites) best = Math.min(best, haversine(lon, lat, s.x, s.y));
+  return Math.min(best, MAX_SEARCH_M);   // cap: "at least this far" when none found
+}
+const fmtMi = (mi) => mi >= MAX_SEARCH_M / MILE - 0.05 ? `${fmt1(MAX_SEARCH_M / MILE)}+` : fmt1(mi);
+function classifyTracts() {
+  const { pov, distMi } = state.rules;
+  for (const t of state.tracts) {
+    t.distMi = nearestFull(t.cx, t.cy) / MILE;
+    t.lowIncome = t.povPct != null && t.povPct >= pov;
+    t.lowAccess = t.distMi > distMi && t.pop > 0;
+    t.status = t.lowIncome && t.lowAccess ? "desert" : t.lowAccess ? "access" : t.lowIncome ? "income" : "ok";
+  }
+}
+function pickSites() {
+  // Rank underserved tracts: food desert first, then low access; weight by people without a car and people in poverty.
+  const ranked = state.tracts
+    .filter((t) => t.status === "desert" || t.status === "access")
+    .map((t) => ({ t, score: (t.status === "desert" ? 1e6 : 0) + t.noveh * 3 + t.poor }))
+    .sort((a, b) => b.score - a.score);
+  const pool = ranked.length >= 3 ? ranked : state.tracts
+    .filter((t) => t.pop > 0).map((t) => ({ t, score: t.distMi * 1000 + t.poor })).sort((a, b) => b.score - a.score);
+  const chosen = [];
+  for (const { t } of pool) {
+    if (chosen.every((c) => haversine(c.x, c.y, t.cx, t.cy) > 1500)) chosen.push({ x: t.cx, y: t.cy });
+    if (chosen.length === 3) break;
+  }
+  for (const { t } of pool) { if (chosen.length === 3) break; if (!chosen.some((c) => c.x === t.cx)) chosen.push({ x: t.cx, y: t.cy }); }
+  return chosen.slice(0, 3).map((c, i) => ({ id: "ABC"[i], x: c.x, y: c.y, moved: false }));
+}
+function evaluateSite(site) {
+  const inMile = state.tracts.filter((t) => haversine(site.x, site.y, t.cx, t.cy) <= MILE);
+  const sum = (arr, k) => arr.reduce((s, t) => s + (t[k] || 0), 0);
+  const newlyServed = inMile.filter((t) => t.lowAccess);
+  const nearest = nearestFull(site.x, site.y);
+  const stops = state.stops.filter((s) => haversine(site.x, site.y, s.x, s.y) <= WALK_M).length;
+  const home = state.tracts.find((t) => haversine(site.x, site.y, t.cx, t.cy) < 1) ||
+    state.tracts.reduce((b, t) => { const d = haversine(site.x, site.y, t.cx, t.cy); return !b || d < b.d ? { t, d } : b; }, null)?.t;
+  return {
+    people: sum(inMile, "pop"), poor: sum(inMile, "poor"), noveh: sum(inMile, "noveh"),
+    desertTracts: inMile.filter((t) => t.status === "desert").length,
+    gainPeople: sum(newlyServed, "pop"), gainNoVeh: sum(newlyServed, "noveh"),
+    nearestMi: nearest / MILE, stops, tractName: home ? home.name : ""
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Map
+// ---------------------------------------------------------------------------
+const sceneEl = $("scene");
+await customElements.whenDefined("arcgis-scene");
+await sceneEl.viewOnReady();
+const view = sceneEl.view;
+const map = sceneEl.map;
+
+const [FeatureLayer, SceneLayer, GraphicsLayer, Graphic] = await $arcgis.import([
+  "@arcgis/core/layers/FeatureLayer.js",
+  "@arcgis/core/layers/SceneLayer.js",
+  "@arcgis/core/layers/GraphicsLayer.js",
+  "@arcgis/core/Graphic.js"
+]);
+
+// Static layers
+const buildings = new SceneLayer({ url: URLS.buildings, title: "3D buildings", popupEnabled: false,
+  renderer: { type: "simple", symbol: { type: "mesh-3d", symbolLayers: [{ type: "fill", material: { color: [236, 236, 236, 1] }, edges: { type: "solid", color: [120, 120, 120, 0.35], size: 0.6 } }] } } });
+const routes = new FeatureLayer({ url: URLS.routes, title: "Transit routes", minScale: 150000, popupEnabled: false,
+  elevationInfo: { mode: "on-the-ground" },
+  renderer: { type: "simple", symbol: { type: "simple-line", color: [42, 111, 219, 0.55], width: 2 } } });
+map.addMany([routes, buildings]);
+buildings.load().catch(() => setStatus("3D buildings could not be loaded here; the rest of the app still works."));
+
+let tractLayer = null, storeLayer = null, stopLayer = null;
+const siteLayer = new GraphicsLayer({ title: "Candidate sites", elevationInfo: { mode: "relative-to-ground" } });
+const ringLayer = new GraphicsLayer({ title: "Site rings", elevationInfo: { mode: "on-the-ground" } });
+map.addMany([ringLayer, siteLayer]);
+
+function tractRenderer() {
+  const outline = { color: [255, 255, 255, 0.9], width: 0.8 };
+  const fill = (c, a = 0.55) => ({ type: "simple-fill", color: hexA(c, a), outline });
+  if (state.colourBy === "status") {
+    return { type: "unique-value", field: "status", defaultSymbol: fill(STATUS_COLOURS.ok, 0.25),
+      uniqueValueInfos: [
+        { value: "desert", label: "Food desert (low income + low access)", symbol: fill(STATUS_COLOURS.desert) },
+        { value: "access", label: "Low access only", symbol: fill(STATUS_COLOURS.access) },
+        { value: "income", label: "Low income only", symbol: fill(STATUS_COLOURS.income, 0.45) },
+        { value: "ok", label: "Neither", symbol: fill(STATUS_COLOURS.ok, 0.25) }] };
+  }
+  const cfg = {
+    pov:   { field: "povPct",   breaks: [10, 20, 30, 40], unit: "%", ramp: ["#f7eef6", "#d4b9da", "#c994c7", "#df65b0", "#980043"] },
+    noveh: { field: "novehPct", breaks: [8, 15, 25, 35],  unit: "%", ramp: ["#f1eef6", "#bdc9e1", "#74a9cf", "#2b8cbe", "#045a8d"] },
+    dist:  { field: "distMi",   breaks: [0.5, 1, 1.5, 2], unit: " mi", ramp: ["#ffffcc", "#fed976", "#fd8d3c", "#e31a1c", "#800026"] }
+  }[state.colourBy];
+  const infos = []; let lo = -Infinity;
+  cfg.breaks.concat([Infinity]).forEach((hi, i) => {
+    const label = lo === -Infinity ? `under ${hi}${cfg.unit}` : hi === Infinity ? `${lo}${cfg.unit} or more` : `${lo}–${hi}${cfg.unit}`;
+    infos.push({ minValue: lo === -Infinity ? -1e9 : lo, maxValue: hi === Infinity ? 1e9 : hi, label, symbol: fill(cfg.ramp[i], 0.6) });
+    lo = hi;
+  });
+  return { type: "class-breaks", field: cfg.field, classBreakInfos: infos, defaultSymbol: fill("#cccccc", 0.2), defaultLabel: "No data" };
+}
+function hexA(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255, a];
+}
+
+function buildTractLayer() {
+  if (tractLayer) map.remove(tractLayer);
+  const graphics = state.tracts.map((t) => new Graphic({
+    geometry: { type: "polygon", rings: t.rings, spatialReference: { wkid: 4326 } },
+    attributes: { OBJECTID: t.oid, GEOID: t.geoid, NAME: t.name, pop: t.pop, poor: t.poor, povPct: t.povPct ?? null,
+      hh: t.hh, noveh: t.noveh, novehPct: t.novehPct ?? null, distMi: Math.round(t.distMi * 100) / 100, status: t.status }
+  }));
+  tractLayer = new FeatureLayer({
+    title: "Census tracts", source: graphics, objectIdField: "OBJECTID", geometryType: "polygon",
+    spatialReference: { wkid: 4326 }, elevationInfo: { mode: "on-the-ground" },
+    fields: [
+      { name: "OBJECTID", type: "oid" }, { name: "GEOID", type: "string" }, { name: "NAME", type: "string" },
+      { name: "pop", type: "integer", alias: "People (poverty universe)" }, { name: "poor", type: "integer", alias: "People below poverty" },
+      { name: "povPct", type: "double", alias: "Poverty rate (%)" }, { name: "hh", type: "integer", alias: "Households" },
+      { name: "noveh", type: "integer", alias: "Households without a vehicle" }, { name: "novehPct", type: "double", alias: "Households without a vehicle (%)" },
+      { name: "distMi", type: "double", alias: "Miles to nearest full-service store" }, { name: "status", type: "string" }
+    ],
+    renderer: tractRenderer(),
+    visible: $("lyrTracts").checked,
+    popupTemplate: {
+      title: "{NAME}",
+      content: [{ type: "fields", fieldInfos: [
+        { fieldName: "pop", label: "People (for whom poverty is measured)", format: { digitSeparator: true, places: 0 } },
+        { fieldName: "povPct", label: "Poverty rate (%)", format: { places: 1 } },
+        { fieldName: "noveh", label: "Households without a vehicle", format: { digitSeparator: true, places: 0 } },
+        { fieldName: "novehPct", label: "Households without a vehicle (%)", format: { places: 1 } },
+        { fieldName: "distMi", label: "Miles from tract centre to nearest full-service store", format: { places: 2 } }
+      ] }]
+    }
+  });
+  map.add(tractLayer, 0);
+}
+
+function buildStoreLayer() {
+  if (storeLayer) map.remove(storeLayer);
+  const cat = (t) => isFullService(t) ? "full" : t === "Grocery Store" ? "grocery" : t === "Farmers and Markets" ? "market" : "other";
+  const graphics = state.stores.map((s) => new Graphic({
+    geometry: { type: "point", x: s.x, y: s.y, spatialReference: { wkid: 4326 } },
+    attributes: { OBJECTID: s.oid, name: s.name, type: s.type, address: s.address, cat: cat(s.type) }
+  }));
+  const icon = (color, size) => ({ type: "point-3d",
+    verticalOffset: { screenLength: size > 12 ? 28 : 0, maxWorldLength: 300, minWorldLength: 10 },
+    callout: size > 12 ? { type: "line", size: 1, color: [40, 40, 40, 0.7] } : undefined,
+    symbolLayers: [{ type: "icon", resource: { primitive: "circle" }, material: { color }, size, outline: { color: [255, 255, 255, 1], size: 1.5 } }] });
+  storeLayer = new FeatureLayer({
+    title: "Food stores (SNAP retailers)", source: graphics, objectIdField: "OBJECTID", geometryType: "point",
+    spatialReference: { wkid: 4326 }, elevationInfo: { mode: "relative-to-scene" }, visible: $("lyrStores").checked,
+    fields: [{ name: "OBJECTID", type: "oid" }, { name: "name", type: "string" }, { name: "type", type: "string" }, { name: "address", type: "string" }, { name: "cat", type: "string" }],
+    renderer: { type: "unique-value", field: "cat", defaultSymbol: icon("#8a8f98", 7), uniqueValueInfos: [
+      { value: "full", label: "Full-service store", symbol: icon("#1a8f4a", 16) },
+      { value: "grocery", label: "Grocery store", symbol: icon("#6fbf73", 10) },
+      { value: "market", label: "Farmers market", symbol: icon("#d4a017", 10) },
+      { value: "other", label: "Convenience / other", symbol: icon("#8a8f98", 7) }] },
+    popupTemplate: { title: "{name}", content: "<b>{type}</b><br>{address}" }
+  });
+  map.add(storeLayer);
+}
+
+function buildStopLayer() {
+  if (stopLayer) map.remove(stopLayer);
+  const graphics = state.stops.map((s, i) => new Graphic({
+    geometry: { type: "point", x: s.x, y: s.y, spatialReference: { wkid: 4326 } },
+    attributes: { OBJECTID: i + 1, name: s.name, type: s.type }
+  }));
+  stopLayer = new FeatureLayer({
+    title: "Transit stops", source: graphics, objectIdField: "OBJECTID", geometryType: "point",
+    spatialReference: { wkid: 4326 }, elevationInfo: { mode: "on-the-ground" }, minScale: 60000, visible: $("lyrStops").checked,
+    fields: [{ name: "OBJECTID", type: "oid" }, { name: "name", type: "string" }, { name: "type", type: "string" }],
+    renderer: { type: "simple", symbol: { type: "point-3d", symbolLayers: [{ type: "icon", resource: { primitive: "square" }, material: { color: "#2a6fdb" }, size: 6, outline: { color: "white", size: 0.8 } }] } },
+    popupTemplate: { title: "{name}", content: "Transit stop ({type})" }
+  });
+  map.add(stopLayer);
+}
+
+function drawSites() {
+  siteLayer.removeAll(); ringLayer.removeAll();
+  const chosen = document.querySelector("input[name=pick]:checked")?.value;
+  for (const s of state.sites) {
+    const col = SITE_COLOURS[s.id];
+    const sel = chosen === s.id;
+    ringLayer.addMany([
+      new Graphic({ geometry: { type: "polygon", rings: [circleRing(s.x, s.y, MILE)], spatialReference: { wkid: 4326 } },
+        symbol: { type: "simple-fill", color: hexA(col, sel ? 0.10 : 0.04), outline: { color: hexA(col, 0.95), width: sel ? 3 : 1.8, style: "dash" } } }),
+      new Graphic({ geometry: { type: "polygon", rings: [circleRing(s.x, s.y, WALK_M)], spatialReference: { wkid: 4326 } },
+        symbol: { type: "simple-fill", color: hexA(col, 0.08), outline: { color: hexA(col, 0.9), width: 1.2 } } })
+    ]);
+    siteLayer.addMany([
+      new Graphic({ geometry: { type: "polygon", rings: [rectRing(s.x, s.y, 70, 45)], spatialReference: { wkid: 4326 } },
+        symbol: { type: "polygon-3d", symbolLayers: [{ type: "extrude", size: 9, material: { color: col }, edges: { type: "solid", color: [255, 255, 255, 0.8], size: 1 } }] },
+        attributes: { site: s.id }, popupTemplate: { title: `Proposed store: Site ${s.id}`, content: "A 70 m × 45 m, 9 m tall block showing the size of a typical neighbourhood supermarket." } }),
+      new Graphic({ geometry: { type: "point", x: s.x, y: s.y, z: 9, spatialReference: { wkid: 4326 } },
+        symbol: { type: "point-3d", verticalOffset: { screenLength: 45, maxWorldLength: 400, minWorldLength: 20 },
+          callout: { type: "line", size: 1.5, color: col },
+          symbolLayers: [{ type: "text", text: `Site ${s.id}`, size: 13, material: { color: "white" }, background: { color: col }, halo: { color: col, size: 2 } }] } })
+    ]);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Panel rendering
+// ---------------------------------------------------------------------------
+function renderLegend() {
+  const L = $("legend");
+  if (state.colourBy === "status") {
+    L.innerHTML = [
+      ["desert", "Food desert: low income + low access"], ["access", "Low access only"],
+      ["income", "Low income only"], ["ok", "Neither"]
+    ].map(([k, t]) => `<div><span class="sw" style="background:${STATUS_COLOURS[k]}"></span>${t}</div>`).join("");
+  } else {
+    const r = tractRenderer();
+    L.innerHTML = r.classBreakInfos.map((c) => `<div><span class="sw" style="background:rgba(${c.symbol.color.slice(0, 3).join(",")},.8)"></span>${c.label}</div>`).join("");
+  }
+  L.innerHTML += `<hr style="border:0;border-top:1px solid var(--line)">
+    <div><span class="dot" style="background:#1a8f4a"></span>Full-service store</div>
+    <div><span class="dot" style="background:#6fbf73"></span>Grocery store</div>
+    <div><span class="dot" style="background:#8a8f98"></span>Convenience / other SNAP store</div>
+    <div><span class="sw" style="background:#2a6fdb;border-radius:0"></span>Transit stop / route</div>`;
+}
+
+function renderSummary() {
+  const T = state.tracts, D = T.filter((t) => t.status === "desert");
+  const full = state.stores.filter((s) => isFullService(s.type) && haversine(state.centre.lon, state.centre.lat, s.x, s.y) <= RADIUS_M).length;
+  const sum = (a, k) => a.reduce((s, t) => s + (t[k] || 0), 0);
+  $("summary").innerHTML = `<div class="card"><div class="stats">
+    <div class="stat"><b>${fmt(T.length)}</b><span>census tracts within ${fmt1(RADIUS_M / MILE)} miles</span></div>
+    <div class="stat"><b>${fmt(full)}</b><span>full-service stores in the area</span></div>
+    <div class="stat"><b style="color:var(--desert)">${fmt(D.length)}</b><span>food desert tracts (your rules)</span></div>
+    <div class="stat"><b>${fmt(sum(D, "pop"))}</b><span>people living in them</span></div>
+  </div>${D.length === 0 ? `<p class="warn small" style="margin:8px 0 0">No tracts meet both rules here. Try relaxing the rules, or pick another community.</p>` : ""}</div>`;
+}
+
+function renderSites() {
+  const results = state.sites.map((s) => ({ s, r: evaluateSite(s) }));
+  $("sites").innerHTML = results.map(({ s, r }) => `
+    <div class="card">
+      <div class="site-head"><span class="badge" style="background:${SITE_COLOURS[s.id]}">Site ${s.id}</span>
+        <span class="small muted" style="flex:1">${r.tractName}${s.moved ? " · moved by you" : ""}</span>
+        <button class="ghost" data-fly="${s.id}">Fly to</button>
+        <button class="ghost" data-move="${s.id}">Move</button></div>
+    </div>`).join("");
+  const rows = [
+    ["People within 1 mile", "people", fmt], ["…of whom below poverty", "poor", fmt],
+    ["Households without a car within 1 mile", "noveh", fmt],
+    ["People who would gain a store within 1 mile", "gainPeople", fmt],
+    ["Food desert tracts within 1 mile", "desertTracts", fmt],
+    ["Nearest existing full-service store (miles)", "nearestMi", fmtMi],
+    ["Transit stops within ¼ mile", "stops", fmt]
+  ];
+  const max = (k) => Math.max(1, ...results.map((x) => x.r[k] || 0));
+  $("compare").innerHTML = `<div class="card"><table>
+    <tr><th>Measure</th>${results.map(({ s }) => `<th style="text-align:right;color:${SITE_COLOURS[s.id]}">${s.id}</th>`).join("")}</tr>
+    ${rows.map(([label, k, f]) => `<tr><td>${label}</td>${results.map(({ s, r }) =>
+      `<td class="num">${f(r[k])}<div class="bar"><i style="width:${Math.round(100 * (r[k] || 0) / max(k))}%;background:${SITE_COLOURS[s.id]}"></i></div></td>`).join("")}</tr>`).join("")}
+  </table><p class="small muted" style="margin:6px 0 0">“Within 1 mile” counts census tracts whose centre is within 1 mile of the site.</p></div>`;
+  const prev = document.querySelector("input[name=pick]:checked")?.value;
+  $("choice").innerHTML = state.sites.map((s) =>
+    `<label style="border-color:${SITE_COLOURS[s.id]}"><input type="radio" name="pick" value="${s.id}" ${prev === s.id ? "checked" : ""}/>Site ${s.id}</label>`).join("");
+  document.querySelectorAll("input[name=pick]").forEach((el) => el.addEventListener("change", drawSites));
+  document.querySelectorAll("[data-fly]").forEach((b) => b.addEventListener("click", () => flyTo(b.dataset.fly)));
+  document.querySelectorAll("[data-move]").forEach((b) => b.addEventListener("click", () => startMove(b.dataset.move)));
+  state.lastResults = results;
+}
+
+function flyTo(id) {
+  const s = state.sites.find((x) => x.id === id);
+  view.goTo({ position: { longitude: s.x, latitude: s.y - 0.006, z: 450 }, tilt: 68, heading: 0 }, { duration: 1800 }).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Workflow
+// ---------------------------------------------------------------------------
+async function analyse(lon, lat, label) {
+  document.querySelectorAll("button").forEach((b) => (b.disabled = true));
+  state.centre = { lon, lat, label };
+  try {
+    setStatus("Loading census tracts (ACS)…", true);
+    state.tracts = await loadTracts(lon, lat);
+    if (!state.tracts.length) throw new Error("No census tracts found here. Is this location in the United States?");
+    setStatus("Loading food stores (USDA SNAP)…", true);
+    state.stores = await loadStores(lon, lat);
+    setStatus("Loading transit stops…", true);
+    try { state.stops = await loadStops(lon, lat); } catch { state.stops = []; }
+    recompute(true);
+    buildStopLayer();
+    view.goTo({ position: { longitude: lon, latitude: lat - 0.075, z: 7500 }, tilt: 55, heading: 0 }, { duration: 2000 }).catch(() => {});
+    setStatus(`Loaded ${state.tracts.length} tracts, ${state.stores.length} stores, ${state.stops.length} transit stops.`);
+  } catch (err) {
+    console.error(err);
+    setStatus(`Could not load data: ${err.message}`, true);
+  } finally {
+    document.querySelectorAll("button").forEach((b) => (b.disabled = false));
+  }
+}
+
+function recompute(newSites) {
+  classifyTracts();
+  if (newSites || !state.sites.length) state.sites = pickSites();
+  buildTractLayer(); buildStoreLayer(); drawSites();
+  renderLegend(); renderSummary(); renderSites();
+}
+
+// Moving a site
+function startMove(id) {
+  state.moving = id; $("moveLabel").textContent = `Site ${id}`; $("movehint").style.display = "block";
+}
+function endMove() { state.moving = null; $("movehint").style.display = "none"; }
+$("cancelMove").addEventListener("click", (e) => { e.preventDefault(); endMove(); });
+view.on("click", (e) => {
+  if (!state.moving || !e.mapPoint) return;
+  e.stopPropagation();
+  const s = state.sites.find((x) => x.id === state.moving);
+  s.x = e.mapPoint.longitude; s.y = e.mapPoint.latitude; s.moved = true;
+  endMove(); drawSites(); renderSites();
+  setStatus(`Site ${s.id} moved. The comparison table has been updated.`);
+});
+
+// Decision download (local file, no account)
+$("download").addEventListener("click", () => {
+  const pick = document.querySelector("input[name=pick]:checked")?.value;
+  if (!pick) { setStatus("Choose a site in step 4 first."); return; }
+  const r = state.lastResults || [];
+  const lines = [
+    "GROCERY STORE SITE CHALLENGE – DECISION",
+    `Team: ${$("team").value || "(not given)"}`,
+    `Community: ${state.centre?.label || ""} (${fmt1(state.centre?.lat)}, ${fmt1(state.centre?.lon)})`,
+    `Date: ${new Date().toLocaleDateString()}`,
+    "",
+    "Food desert rules used:",
+    `  Low income: poverty rate ≥ ${state.rules.pov}%`,
+    `  Low access: more than ${state.rules.distMi} mile(s) from a full-service store${state.rules.incGrocery ? " (grocery stores counted)" : ""}`,
+    "",
+    "Site comparison:",
+    ...r.map(({ s, r: m }) => `  Site ${s.id}${s.moved ? " (moved)" : ""} at ${s.y.toFixed(5)}, ${s.x.toFixed(5)}: ${fmt(m.people)} people within 1 mi; ${fmt(m.poor)} below poverty; ${fmt(m.noveh)} households without a car; ${fmt(m.gainPeople)} people gain a store within 1 mi; nearest existing store ${fmtMi(m.nearestMi)} mi; ${m.stops} transit stops within ¼ mi.`),
+    "",
+    `RECOMMENDED SITE: ${pick}`,
+    "",
+    "Reasoning:",
+    $("why").value || "(not given)",
+    "",
+    "Data: U.S. Census Bureau ACS 5-year estimates (via ArcGIS Living Atlas); USDA SNAP retailer locations; U.S. DOT BTS National Transit Map; Esri 3D Buildings."
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `grocery-site-decision-${pick}.txt`;
+  a.click(); URL.revokeObjectURL(a.href);
+});
+
+// Controls
+const sel = $("community");
+sel.innerHTML = COMMUNITIES.map((c, i) => `<option value="${i}">${c.name}</option>`).join("");
+$("analyse").addEventListener("click", () => { const c = COMMUNITIES[sel.value]; analyse(c.lon, c.lat, c.name); });
+$("analyseHere").addEventListener("click", () => {
+  const c = view.center; analyse(c.longitude, c.latitude, "Custom area (map centre)");
+});
+$("pov").addEventListener("input", (e) => { $("povVal").textContent = e.target.value; });
+$("dist").addEventListener("input", (e) => { $("distVal").textContent = Number(e.target.value).toFixed(2).replace(/0$/, ""); });
+["pov", "dist"].forEach((id) => $(id).addEventListener("change", () => {
+  state.rules.pov = Number($("pov").value); state.rules.distMi = Number($("dist").value);
+  if (state.tracts.length) recompute(false);
+}));
+$("incGrocery").addEventListener("change", (e) => { state.rules.incGrocery = e.target.checked; if (state.tracts.length) recompute(false); });
+$("colourBy").addEventListener("change", (e) => { state.colourBy = e.target.value; if (tractLayer) tractLayer.renderer = tractRenderer(); renderLegend(); });
+$("lyrTracts").addEventListener("change", (e) => tractLayer && (tractLayer.visible = e.target.checked));
+$("lyrStores").addEventListener("change", (e) => storeLayer && (storeLayer.visible = e.target.checked));
+$("lyrStops").addEventListener("change", (e) => stopLayer && (stopLayer.visible = e.target.checked));
+$("lyrRoutes").addEventListener("change", (e) => (routes.visible = e.target.checked));
+$("lyrBuildings").addEventListener("change", (e) => (buildings.visible = e.target.checked));
+$("basemap").addEventListener("change", (e) => (map.basemap = e.target.value));
+
+renderLegend();
+const first = COMMUNITIES[0];
+analyse(first.lon, first.lat, first.name);
+</script>
+</body>
+</html>
