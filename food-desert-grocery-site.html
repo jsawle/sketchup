@@ -1,9 +1,18 @@
 <!doctype html>
 <!--
   Grocery Store Site Challenge
-  Version 0.6.0 (2026-09-24)
+  Version 0.7.0 (2026-09-24)
+
+  Model versions (bump when a model's maths or data handling changes)
+    Food desert test          1.0.0   poverty % and straight-line distance to nearest supermarket, per census tract
+    Food desert areas         1.0.0   touching food desert tracts grouped (30 m edge tolerance)
+    People served             1.0.0   people spread evenly over each tract on a sample grid; counted within the distance rule
+    Transit stops near store  1.1.0   server-side count of stops within 400 m (1.0.0 downloaded all stops and counted locally)
+    Minimum plot rule         1.0.0   3 x store floor area
 
   Changelog
+  0.7.0  2026-09-24  Faster loading: bus/rail stops no longer downloaded (map layer streams from the service; stop count near the
+                     store is one server query), census and store data fetched in parallel, cities cached. Model version tags.
   0.6.0  2026-09-24  Store moved, resized and turned directly on the map (drag body, side dots, turn handle); panel sliders removed.
   0.5.0  2026-09-24  Student output as Word (.docx) or Google Doc (via Drive upload); one screenshot instead of three.
   0.4.0  2026-09-24  Reworked flow: explore numbered food desert areas, place one 3D store with live "people served" feedback,
@@ -16,7 +25,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-<meta name="version" content="0.6.0" />
+<meta name="version" content="0.7.0" />
 <title>Grocery Store Site Challenge</title>
 <!-- ArcGIS Maps SDK for JavaScript 5.1 (components + core, single entry point). No API key needed: all layers are public. -->
 <script type="module" src="https://js.arcgis.com/5.1/"></script>
@@ -83,6 +92,8 @@
   .legend-head { width: 100%; text-align: left; background: none; color: var(--ink); border: 0; font-weight: 700; padding: 8px 12px; display: flex; justify-content: space-between; }
   #maplegend .legend { padding: 0 12px 10px; }
   #maplegend.collapsed .legend { display: none; }
+  .ver { font-size: 10.5px; font-weight: 500; color: #7a8394; background: #eef1f5; border-radius: 8px; padding: 1px 7px; white-space: nowrap; }
+  .vt { width: 100%; border-collapse: collapse; margin-top: 4px; } .vt td { font-size: 11.5px; padding: 3px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
   .howto { list-style: none; padding: 0; margin: 6px 0 0; }
   .howto li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin: 4px 0; }
   .hico { width: 18px; height: 18px; border-radius: 4px; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; }
@@ -115,6 +126,7 @@
       <p class="small" style="margin:0 0 4px">A neighbourhood is a food desert when <b>both</b> are true:</p>
       <div><span class="tnum">1</span><span>At least <b class="povRule">20</b>% of people live in poverty.</span></div>
       <div><span class="tnum">2</span><span>The nearest supermarket is more than <b class="distRule">1</b> mile away.</span></div>
+      <div style="justify-content:flex-end" id="verDesertTest"></div>
     </div>
     <div id="summary"></div>
     <ul id="desertList" class="deserts"></ul>
@@ -205,6 +217,8 @@
         <p><b>People served</b> assumes people are spread evenly across each neighbourhood. A person counts if they live within the distance rule (1 mile) of your store and are currently more than that distance from any supermarket. Distances are straight-line, not walking routes.</p>
         <p><b>Minimum plot size</b> is a rule of thumb: 3 × the store floor area, to leave room for parking and deliveries.</p>
         <p>USDA’s official Food Access Research Atlas uses finer grids and more income measures. Results here are for learning, not official designations.</p>
+        <p style="margin-bottom:2px"><b>Versions</b></p>
+        <table class="vt" id="versionTable"></table>
       </div>
     </details>
     <p class="small muted" style="margin:14px 0 0;text-align:center">Version <span id="appVersion"></span></p>
@@ -255,7 +269,15 @@
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
-const APP_VERSION = "0.6.0";   // keep in step with the changelog at the top of this file
+const APP_VERSION = "0.7.0";   // keep in step with the changelog at the top of this file
+const MODELS = {               // bump a model's version whenever its maths or data handling changes
+  desertTest:   { name: "Food desert test",         v: "1.0.0", what: "Poverty rate and straight-line distance from each neighbourhood's centre to the nearest supermarket" },
+  desertAreas:  { name: "Food desert areas",        v: "1.0.0", what: "Touching food desert neighbourhoods grouped into numbered areas" },
+  peopleServed: { name: "People served",            v: "1.0.0", what: "People spread evenly across each neighbourhood; counted if within the distance rule of the store and not already near a supermarket" },
+  transit:      { name: "Transit stops near store", v: "1.1.0", what: "Bus and rail stops within ¼ mile, counted on the U.S. DOT service" },
+  plotRule:     { name: "Minimum plot rule",        v: "1.0.0", what: "Plot must be at least 3 × the store floor area" }
+};
+const verTag = (k) => `<span class="ver" title="${MODELS[k].name} model">${MODELS[k].name} v${MODELS[k].v}</span>`;
 console.info(`Grocery Store Site Challenge v${APP_VERSION}`);
 const COMMUNITIES = [
   { name: "Dallas, Texas (South Dallas)", lon: -96.752, lat: 32.765 },
@@ -290,7 +312,7 @@ const C = { desert: "#d7263d", store: "#0077b6", ring: "#00d1ff", plot: "#ffd21f
 // State
 // ---------------------------------------------------------------------------
 const state = {
-  centre: null, tracts: [], stores: [], stops: [], deserts: [], samples: null,
+  centre: null, tracts: [], stores: [], deserts: [], samples: null, stopCount: { key: "", n: null }, cache: {},
   store: { placed: false, x: 0, y: 0, length: 70, width: 45, rot: 0 },
   best: null, carrying: false, carryFrom: null, plot: null, measure: null,
   rules: { pov: 20, distMi: 1, incGrocery: false }, colourBy: "status"
@@ -370,41 +392,42 @@ function segDist(px, py, ax, ay, bx, by) {
 }
 
 // ---------------------------------------------------------------------------
-// REST queries (paged)
+// REST queries: get the matching IDs first, then fetch pages in parallel.
+// POST keeps long ID lists out of the URL (form posts need no CORS preflight).
 // ---------------------------------------------------------------------------
-async function queryAll(url, params, pageSize) {
-  let offset = 0; const out = [];
-  for (let guard = 0; guard < 60; guard++) {
-    const p = new URLSearchParams({ ...params, resultOffset: offset, resultRecordCount: pageSize, f: "json" });
-    const res = await fetch(`${url}/query?${p}`);
-    const j = await res.json();
-    if (j.error) throw new Error(j.error.message || "Query failed");
-    const feats = j.features || [];
-    out.push(...feats);
-    if (feats.length === 0 || (!j.exceededTransferLimit && feats.length < pageSize)) break;
-    offset += feats.length;
-  }
+async function restQuery(url, params) {
+  const res = await fetch(`${url}/query`, { method: "POST", body: new URLSearchParams({ ...params, f: "json" }) });
+  const j = await res.json();
+  if (j.error) throw new Error(j.error.message || "Query failed");
+  return j;
+}
+async function inPool(items, limit, fn) {   // run fn over items, at most `limit` at a time
+  const out = new Array(items.length); let next = 0;
+  const worker = async () => { while (next < items.length) { const i = next++; out[i] = await fn(items[i]); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return out;
+}
+async function queryParallel(url, filter, fetchParams, pageSize) {
+  const { objectIds = [] } = await restQuery(url, { ...filter, returnIdsOnly: "true" });
+  const chunks = [];
+  for (let i = 0; i < objectIds.length; i += pageSize) chunks.push(objectIds.slice(i, i + pageSize));
+  const pages = await inPool(chunks, 6, (ids) => restQuery(url, { ...fetchParams, objectIds: ids.join(","), outSR: "4326" }));
+  return pages.flatMap((j) => j.features || []);
 }
 function nearParams(lon, lat, distM) {
   return { geometry: `${lon},${lat}`, geometryType: "esriGeometryPoint", inSR: "4326",
-    spatialRel: "esriSpatialRelIntersects", distance: String(distM), units: "esriSRUnit_Meter", outSR: "4326" };
+    spatialRel: "esriSpatialRelIntersects", distance: String(distM), units: "esriSRUnit_Meter" };
 }
 async function loadTracts(lon, lat) {
-  const veh = await queryAll(URLS.vehicles, {
-    ...nearParams(lon, lat, RADIUS_M), where: "1=1",
-    outFields: "GEOID,NAME,County,State,B08201_001E,B08201_002E,B08201_calc_pctNoVehE",
-    returnGeometry: "true", returnCentroid: "true", maxAllowableOffset: "0.0001", geometryPrecision: "6"
-  }, 50);
-  const geoids = veh.map((f) => f.attributes.GEOID).filter(Boolean);
+  const near = { ...nearParams(lon, lat, RADIUS_M), where: "1=1" };
+  // Vehicles (with shapes) and poverty (numbers only) share the same census tracts: fetch both at once.
+  const [veh, povRows] = await Promise.all([
+    queryParallel(URLS.vehicles, near, { outFields: "GEOID,NAME,B08201_001E,B08201_002E,B08201_calc_pctNoVehE",
+      returnGeometry: "true", returnCentroid: "true", maxAllowableOffset: "0.0001", geometryPrecision: "6" }, 50),
+    queryParallel(URLS.poverty, near, { outFields: "GEOID,B17020_001E,B17020_002E,B17020_calc_pctPovE", returnGeometry: "false" }, 50)
+  ]);
   const pov = {};
-  for (let i = 0; i < geoids.length; i += 80) {
-    const chunk = geoids.slice(i, i + 80).map((g) => `'${g}'`).join(",");
-    const rows = await queryAll(URLS.poverty, {
-      where: `GEOID IN (${chunk})`, outFields: "GEOID,B17020_001E,B17020_002E,B17020_calc_pctPovE", returnGeometry: "false"
-    }, 2000);
-    rows.forEach((r) => (pov[r.attributes.GEOID] = r.attributes));
-  }
+  povRows.forEach((r) => (pov[r.attributes.GEOID] = r.attributes));
   return veh.filter((f) => f.geometry && f.geometry.rings).map((f, i) => {
     const a = f.attributes, p = pov[a.GEOID] || {};
     const c = (f.centroid && isFinite(f.centroid.x)) ? f.centroid : ringCentroid(f.geometry.rings);
@@ -414,18 +437,29 @@ async function loadTracts(lon, lat) {
   });
 }
 async function loadStores(lon, lat) {
-  const feats = await queryAll(URLS.snap, {
-    ...nearParams(lon, lat, MAX_SEARCH_M), where: "Store_Type <> 'Restaurant Meals Program'",
-    outFields: "Store_Name,Store_Type,Store_Street_Address,City", returnGeometry: "true"
-  }, 1000);
+  const feats = await queryParallel(URLS.snap, { ...nearParams(lon, lat, MAX_SEARCH_M), where: "Store_Type <> 'Restaurant Meals Program'" },
+    { outFields: "Store_Name,Store_Type,Store_Street_Address,City", returnGeometry: "true" }, 1000);
   return feats.filter((f) => f.geometry).map((f, i) => ({ oid: i + 1, x: f.geometry.x, y: f.geometry.y,
     name: f.attributes.Store_Name, type: f.attributes.Store_Type || "Other",
     address: [f.attributes.Store_Street_Address, f.attributes.City].filter(Boolean).join(", ") }));
 }
-async function loadStops(lon, lat) {
-  const feats = await queryAll(URLS.stops, { ...nearParams(lon, lat, RADIUS_M + 1000), where: "1=1",
-    outFields: "stop_name,stop_type_text", returnGeometry: "true" }, 2000);
-  return feats.filter((f) => f.geometry).map((f) => ({ x: f.geometry.x, y: f.geometry.y, name: f.attributes.stop_name, type: f.attributes.stop_type_text }));
+// Transit stops are not downloaded in bulk. The map layer streams only what is on screen,
+// and the store's "stops within ¼ mile" is one small count query after the store stops moving.
+async function countStopsNear(x, y) {
+  const j = await restQuery(URLS.stops, { ...nearParams(x, y, WALK_M), where: "1=1", returnCountOnly: "true" });
+  return j.count ?? 0;
+}
+let stopTimer = 0, stopSeq = 0;
+function refreshStopCount() {
+  const x = state.store.x, y = state.store.y, key = `${x.toFixed(4)},${y.toFixed(4)}`;
+  if (state.stopCount.key === key) return;
+  state.stopCount = { key, n: null };
+  clearTimeout(stopTimer);
+  stopTimer = setTimeout(async () => {
+    const seq = ++stopSeq;
+    let n; try { n = await countStopsNear(x, y); } catch { n = -1; }
+    if (seq === stopSeq && state.stopCount.key === key) { state.stopCount.n = n; renderFeedback(); }
+  }, 350);
 }
 
 // ---------------------------------------------------------------------------
@@ -535,7 +569,7 @@ function evaluateStore(x, y) {
   return {
     all, gain, gainDesert, noCar, poor,
     nearestMi: nearestFull(x, y) / MILE,
-    stops: state.stops.filter((s) => haversine(x, y, s.x, s.y) <= WALK_M).length,
+    stops: state.stopCount.key === `${x.toFixed(4)},${y.toFixed(4)}` ? state.stopCount.n : null,   // null = still counting
     tract, desertArea: tract ? tract.desertArea : null
   };
 }
@@ -680,19 +714,14 @@ function buildStoreLayer() {
   });
   map.add(storeLayer);
 }
-function buildStopLayer() {
-  if (stopLayer) map.remove(stopLayer);
-  const graphics = state.stops.map((s, i) => new Graphic({ geometry: { type: "point", x: s.x, y: s.y, spatialReference: SR },
-    attributes: { OBJECTID: i + 1, name: s.name, type: s.type } }));
-  stopLayer = new FeatureLayer({
-    title: "Bus and rail stops", source: graphics, objectIdField: "OBJECTID", geometryType: "point", spatialReference: SR,
-    elevationInfo: { mode: "on-the-ground" }, minScale: 60000, visible: $("lyrStops").checked,
-    fields: [{ name: "OBJECTID", type: "oid" }, { name: "name", type: "string" }, { name: "type", type: "string" }],
-    renderer: { type: "simple", symbol: { type: "point-3d", symbolLayers: [{ type: "icon", resource: { primitive: "square" }, material: { color: "#2a6fdb" }, size: 6, outline: { color: "white", size: 0.8 } }] } },
-    popupTemplate: { title: "{name}", content: "Bus or rail stop ({type})" }
-  });
-  map.add(stopLayer);
-}
+// Bus and rail stops stream straight from the U.S. DOT service, only for the area on screen.
+stopLayer = new FeatureLayer({
+  url: URLS.stops, title: "Bus and rail stops", outFields: ["stop_name", "stop_type_text"],
+  elevationInfo: { mode: "on-the-ground" }, minScale: 60000,
+  renderer: { type: "simple", symbol: { type: "point-3d", symbolLayers: [{ type: "icon", resource: { primitive: "square" }, material: { color: "#2a6fdb" }, size: 6, outline: { color: "white", size: 0.8 } }] } },
+  popupTemplate: { title: "{stop_name}", content: "Bus or rail stop ({stop_type_text})" }
+});
+map.add(stopLayer);
 
 // ---- Your store -----------------------------------------------------------
 const LIMITS = { length: [30, 150], width: [20, 100] }, SNAP_M = 5, DEFAULT_SIZE = { length: 70, width: 45, rot: 0 };
@@ -852,7 +881,8 @@ function renderSummary() {
   $("summary").innerHTML = D.length
     ? `<div class="card"><p class="headline">We found <b class="big">${D.length}</b> food desert area${D.length > 1 ? "s" : ""} in this part of ${esc(place)}.
         <b>${fmt(sum(D, "pop"))}</b> people live in them.</p>
-        <p class="small muted" style="margin:6px 0 0">There ${full === 1 ? "is 1 supermarket" : `are ${fmt(full)} supermarkets`} in the ${fmt1(RADIUS_M / MILE)}-mile study area.</p></div>`
+        <p class="small muted" style="margin:6px 0 0">There ${full === 1 ? "is 1 supermarket" : `are ${fmt(full)} supermarkets`} in the ${fmt1(RADIUS_M / MILE)}-mile study area.</p>
+        <div style="text-align:right;margin-top:4px">${verTag("desertAreas")}</div></div>`
     : `<div class="card warn"><p class="small" style="margin:0">No food deserts found here with the current rules. Try another city.</p></div>`;
   $("desertList").innerHTML = D.map((d) => `<li><span class="num">${d.id}</span>
       <span class="txt"><b>${fmt(d.pop)} people</b> · ${d.tracts.length} neighbourhood${d.tracts.length > 1 ? "s" : ""}${d.novehPct != null ? ` · ${fmt(d.novehPct)}% no car` : ""}</span>
@@ -871,6 +901,7 @@ function goToDesert(id) {
 function renderFeedback() {
   const box = $("feedback");
   if (!state.store.placed && !state.carrying) { box.style.display = "none"; return; }
+  refreshStopCount();   // counted on the server once the store stops moving
   const r = evaluateStore(state.store.x, state.store.y), mi = miWord(state.rules.distMi);
   state.lastEval = r;
   const where = r.desertArea
@@ -880,13 +911,13 @@ function renderFeedback() {
     ? `<div class="small" style="margin-top:6px">Your best spot so far: <b>${fmt(state.best.gain)}</b> people <button class="ghost" id="goBest" style="padding:2px 8px;font-size:12px">Go back</button></div>` : "";
   box.innerHTML = `<div class="small muted">${state.carrying ? "Trying this spot…" : "Your store"}</div>
     <div class="bignum">${fmt(r.gain)}</div>
-    <div class="small">people would get a supermarket within ${mi}</div>
+    <div class="small">people would get a supermarket within ${mi} ${verTag("peopleServed")}</div>
     <ul>
       <li>…living in food deserts <b>${fmt(r.gainDesert)}</b></li>
       <li>…households without a car <b>${fmt(r.noCar)}</b></li>
       <li>…people living in poverty <b>${fmt(r.poor)}</b></li>
       <li>Nearest existing supermarket <b>${fmtMi(r.nearestMi)} mi</b></li>
-      <li>Bus or rail stops within ¼ mile <b>${fmt(r.stops)}</b></li>
+      <li><span>Bus or rail stops within ¼ mile <span class="ver">v${MODELS.transit.v}</span></span> <b>${r.stops == null ? "counting…" : r.stops < 0 ? "unavailable" : fmt(r.stops)}</b></li>
     </ul>${where}${best}`;
   box.style.display = "block";
   $("goBest")?.addEventListener("click", () => { setStorePos(state.best.x, state.best.y); view.goTo({ center: [state.best.x, state.best.y] }, { duration: 1000 }).catch(() => {}); });
@@ -894,7 +925,7 @@ function renderFeedback() {
 
 function renderPlotLine() {
   const s = state.store; if (!s.placed) return;
-  const need = `Needs a plot of at least <b>${fmtArea(minPlotM2())}</b> for the store, parking and deliveries.`;
+  const need = `Needs a plot of at least <b>${fmtArea(minPlotM2())}</b> for the store, parking and deliveries. ${verTag("plotRule")}`;
   const chk = plotCheck();
   $("plotLine").innerHTML = !chk
     ? `<div class="plotline">${need}<button class="ghost" id="measureBtn" style="margin-top:6px;width:100%">📐 Measure the plot (optional)</button></div>`
@@ -1153,7 +1184,7 @@ function buildSitePlanDoc(D, d) {
           ["…people living in poverty", fmt(r.poor)],
           [`Everyone living within ${mi}`, fmt(r.all)],
           ["Nearest existing supermarket", `${fmtMi(r.nearestMi)} miles`],
-          ["Bus or rail stops within ¼ mile", fmt(r.stops)]
+          ["Bus or rail stops within ¼ mile", r.stops == null ? "Not available" : fmt(r.stops)]
         ]),
         H("Why we chose this location"),
         ...why,
@@ -1170,7 +1201,7 @@ function buildSitePlanDoc(D, d) {
         H("How the food desert was defined"),
         P(`A neighbourhood (census tract) is a food desert when at least ${d.rules.pov}% of people live in poverty and the nearest supermarket is more than ${mi} away${d.rules.incGrocery ? " (small grocery stores counted as supermarkets)" : ""}. People served assumes people are spread evenly across each neighbourhood and uses straight-line distance.`),
         P("Data: U.S. Census Bureau American Community Survey 5-year estimates (via ArcGIS Living Atlas); USDA SNAP retailer locations; U.S. DOT BTS National Transit Map; Esri 3D Buildings. For learning, not official designations.", { run: { size: 16, color: "5B6475" } }),
-        P(`Made with Grocery Store Site Challenge v${APP_VERSION}.`, { run: { size: 16, color: "5B6475" } })
+        P(`Made with Grocery Store Site Challenge v${APP_VERSION}. Models: ${Object.values(MODELS).map((m) => `${m.name} v${m.v}`).join(" · ")}.`, { run: { size: 16, color: "5B6475" } })
       ]
     }]
   });
@@ -1185,10 +1216,11 @@ async function makeSitePlan(kind) {
   const btn = kind === "word" ? $("wordBtn") : $("gdocBtn"), label = btn.textContent;
   btn.textContent = "Making it…";
   try {
-    const [D, img] = await Promise.all([loadDocx(), takeSitePicture()]);
     const s = state.store;
+    const [D, img, stops] = await Promise.all([loadDocx(), takeSitePicture(), countStopsNear(s.x, s.y).catch(() => null)]);
+    const ev = { ...evaluateStore(s.x, s.y), stops };
     const doc = buildSitePlanDoc(D, { city: state.centre.label, team: $("team").value.trim(), date: new Date().toLocaleDateString(),
-      why: $("why").value.trim(), store: { ...s }, eval: evaluateStore(s.x, s.y), plot: plotCheck(), rules: { ...state.rules }, imageBytes: dataUrlToBytes(img) });
+      why: $("why").value.trim(), store: { ...s }, eval: ev, plot: plotCheck(), rules: { ...state.rules }, imageBytes: dataUrlToBytes(img) });
     const blob = await D.Packer.toBlob(doc);
     const name = `supermarket-site-plan-${state.centre.label.split(/[,(]/)[0].trim().replace(/\W+/g, "-").toLowerCase()}.docx`;
     const url = URL.createObjectURL(blob), a = document.createElement("a");
@@ -1229,16 +1261,18 @@ async function analyse(lon, lat, label, fly = true) {
   $("summary").innerHTML = ""; $("desertList").innerHTML = ""; labelLayer.removeAll();
   if (fly) view.goTo({ center: [lon, lat], zoom: 13, tilt: 45, heading: 0 }, { duration: 2000 }).catch(() => {});
   try {
-    setStatus("Loading neighbourhoods (census data)…", true);
-    state.tracts = await loadTracts(lon, lat);
+    const key = `${lon.toFixed(4)},${lat.toFixed(4)}`;
+    const t0 = performance.now();
+    if (!state.cache[key]) {
+      setStatus("Loading neighbourhoods and food stores…", true);
+      const [tracts, stores] = await Promise.all([loadTracts(lon, lat), loadStores(lon, lat)]);
+      state.cache[key] = { tracts, stores };
+    }
+    ({ tracts: state.tracts, stores: state.stores } = state.cache[key]);
     if (!state.tracts.length) throw new Error("No census data found here. Is this location in the United States?");
-    setStatus("Loading food stores…", true);
-    state.stores = await loadStores(lon, lat);
-    setStatus("Loading bus and rail stops…", true);
-    try { state.stops = await loadStops(lon, lat); } catch { state.stops = []; }
+    console.info(`Data ready in ${Math.round(performance.now() - t0)} ms (${state.tracts.length} tracts, ${state.stores.length} stores)`);
     buildSamples();
     recompute();
-    buildStopLayer();
     setStatus(state.deserts.length ? `Found ${state.deserts.length} food desert area${state.deserts.length > 1 ? "s" : ""}. Click a red area to explore it.` : "No food deserts found here. Try another city.");
   } catch (err) {
     console.error(err);
@@ -1287,6 +1321,9 @@ $("legendToggle").addEventListener("click", () => {
 if (window.matchMedia("(max-width: 820px)").matches) { $("maplegend").classList.add("collapsed"); $("legendArrow").textContent = "▸"; }
 
 $("appVersion").textContent = APP_VERSION;
+$("verDesertTest").innerHTML = verTag("desertTest");
+$("versionTable").innerHTML = `<tr><td><b>App</b></td><td><b>v${APP_VERSION}</b></td><td></td></tr>` +
+  Object.values(MODELS).map((m) => `<tr><td>${m.name}</td><td>v${m.v}</td><td>${m.what}</td></tr>`).join("");
 renderLegend();
 const first = COMMUNITIES[0];
 analyse(first.lon, first.lat, first.name, false);   // the scene already opens on the first city
