@@ -69,6 +69,9 @@
   .legend-head { width: 100%; text-align: left; background: none; color: var(--ink); border: 0; font-weight: 700; padding: 8px 12px; display: flex; justify-content: space-between; }
   #maplegend .legend { padding: 0 12px 10px; }
   #maplegend.collapsed .legend { display: none; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 20; display: none; align-items: center; justify-content: center; padding: 16px; }
+  .modal.show { display: flex; }
+  .modal-box { background: #fff; border-radius: 10px; padding: 16px 18px; width: min(440px, 100%); box-shadow: 0 6px 30px rgba(0,0,0,.35); }
   @media (max-width: 820px) {
     #app { flex-direction: column-reverse; }
     #mapwrap { height: 58vh; flex: none; }
@@ -131,8 +134,12 @@
 
     <!-- STEP 4 -->
     <h2><span class="step">4</span>Create your site plan <span class="mins">about 5 min</span></h2>
-    <button id="reportBtn" class="big">📄 Create my site plan</button>
-    <p class="small muted" style="margin:6px 0 0">This makes a document with pictures of your site, your numbers, your reasons and the store size, ready for building it in <b>SketchUp</b>. It opens in a new tab: print it or save it as a PDF. Nothing is sent anywhere and you don't need an account.</p>
+    <p class="small" style="margin:0 0 6px">First, move the map so it shows your store the way you want it in your document. That view becomes the picture.</p>
+    <div class="row">
+      <button id="wordBtn" class="big" style="background:#2b579a;border-color:#2b579a">📄 Word document</button>
+      <button id="gdocBtn" class="big" style="background:#1a73e8;border-color:#1a73e8">📝 Google Doc</button>
+    </div>
+    <p class="small muted" style="margin:6px 0 0">Your site plan has your picture, numbers, reasons and the store size, ready for building it in <b>SketchUp</b>. It is made on this device. Nothing is sent anywhere.</p>
 
     <!-- EXTRAS -->
     <details class="card" style="margin-top:18px">
@@ -202,6 +209,18 @@
       <div><b>Measure your plot</b>: click each corner of the land. Double-click (or press Finish) on the last corner.</div>
       <div class="row" style="margin-top:6px"><span id="measureLive" class="small"></span>
         <button id="measureUndo" class="ghost">Undo</button><button id="measureFinish">Finish</button><button id="measureCancel" class="ghost">Cancel</button></div>
+    </div>
+    <div id="gdocModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="gdocTitle">
+      <div class="modal-box">
+        <h3 id="gdocTitle" style="margin:0 0 8px">Turn it into a Google Doc</h3>
+        <p class="small" style="margin:0 0 8px">✔ Your site plan has been saved to your <b>Downloads</b> as <b id="gdocFile"></b>.</p>
+        <ol class="small" style="padding-left:18px;margin:0 0 10px">
+          <li>Press <b>Open Google Drive</b> below.</li>
+          <li>Drag the file into Drive, or click <b>New → File upload</b> and choose it.</li>
+          <li>Double-click the file in Drive, then choose <b>Open with → Google Docs</b>.</li>
+        </ol>
+        <div class="row"><button id="gdocOpen" style="background:#1a73e8;border-color:#1a73e8">Open Google Drive</button><button id="gdocClose" class="ghost">Close</button></div>
+      </div>
     </div>
     <div id="maplegend">
       <button id="legendToggle" class="legend-head">Legend <span id="legendArrow">▾</span></button>
@@ -885,118 +904,140 @@ $("measureUndo").addEventListener("click", () => { if (state.measure) { state.me
 // ---------------------------------------------------------------------------
 // Site plan document
 // ---------------------------------------------------------------------------
-async function waitForView(timeoutMs = 8000) {
+const DOCX_URL = "https://cdn.jsdelivr.net/npm/docx@9.7.2/dist/index.mjs";   // loaded only when a student makes a document
+let docxLib = null;
+async function loadDocx() { return (docxLib ||= await import(DOCX_URL)); }
+
+async function waitForView(timeoutMs = 6000) {
   await Promise.race([reactiveUtils.whenOnce(() => !view.updating), new Promise((r) => setTimeout(r, timeoutMs))]);
-  await new Promise((r) => setTimeout(r, 400));
+  await new Promise((r) => setTimeout(r, 300));
 }
-async function capture(target) {
-  await view.goTo(target, { animate: false });
-  await waitForView();
-  const shot = await view.takeScreenshot({ format: "jpg", quality: 85, width: 1200, height: 750 });
+// One picture only. Use the student's current view if the store is on screen; otherwise fly to it once.
+async function takeSitePicture() {
+  const s = state.store;
+  const sp = view.toScreen({ type: "point", x: s.x, y: s.y, spatialReference: SR });
+  const onScreen = sp && sp.x > 40 && sp.y > 40 && sp.x < view.width - 40 && sp.y < view.height - 40 && view.scale < 40000;
+  const saved = onScreen ? null : view.camera.clone();
+  if (!onScreen) { await view.goTo({ center: [s.x, s.y], zoom: 16, tilt: 50, heading: 0 }, { animate: false }); await waitForView(); }
+  const shot = await view.takeScreenshot({ format: "jpg", quality: 80, width: 1200, height: 750 });
+  if (saved) view.goTo(saved, { animate: false }).catch(() => {});
   return shot.dataUrl;
 }
-function buildReport(d) {
-  const s = d.store, r = d.eval, chk = d.plot;
-  const plotTxt = chk ? `${fmtArea(chk.area)}: ${chk.bigEnough ? "big enough" : "too small"}; the store ${chk.fits ? "fits on it" : "does not fit on it yet"}.` : "Not measured.";
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Supermarket site plan – ${esc(d.city)}</title>
-<style>
- body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#1d2433;max-width:900px;margin:24px auto;padding:0 20px;line-height:1.45}
- h1{margin:0 0 4px;font-size:26px} h2{font-size:18px;margin:26px 0 8px;border-bottom:2px solid #0077b6;padding-bottom:4px}
- .meta{color:#5b6475;margin:0 0 12px} img{width:100%;border-radius:8px;border:1px solid #dde2ea} figure{margin:10px 0} figcaption{font-size:13px;color:#5b6475}
- table{border-collapse:collapse;width:100%} td{padding:6px 8px;border-bottom:1px solid #dde2ea;vertical-align:top} td:first-child{color:#5b6475;width:45%}
- .big{font-size:28px;font-weight:800;color:#0077b6} .why{white-space:pre-wrap;background:#f6f7f9;border-left:4px solid #0077b6;padding:10px 14px;border-radius:4px}
- .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px} .sk{background:#eef7fc;border-radius:8px;padding:10px 16px}
- .noprint{margin:10px 0 18px} button{font:inherit;padding:8px 14px;border-radius:6px;border:0;background:#1d2433;color:#fff;cursor:pointer}
- @media print{.noprint{display:none} body{margin:0} h2{break-after:avoid} figure{break-inside:avoid}}
- @media (max-width:640px){.grid{grid-template-columns:1fr}}
-</style></head><body>
-<div class="noprint"><button onclick="window.print()">Print or save as PDF</button></div>
-<h1>Supermarket site plan</h1>
-<p class="meta">${esc(d.city)} · ${esc(d.team || "Name not given")} · ${esc(d.date)}</p>
-
-<h2>Our chosen site</h2>
-<figure><img src="${d.img3d}" alt="3D view of the proposed store"><figcaption>3D view of the proposed store (blue) among the existing buildings.</figcaption></figure>
-<div class="grid">
- <figure><img src="${d.imgPlan}" alt="Plan view of the site"><figcaption>Plan view from above${chk ? ", with the measured plot in yellow" : ""}.</figcaption></figure>
- <figure><img src="${d.imgArea}" alt="The area the store serves"><figcaption>The area the store serves (dashed ring) and food desert areas (red).</figcaption></figure>
-</div>
-<table>
- <tr><td>Location (latitude, longitude)</td><td><b>${s.y.toFixed(6)}, ${s.x.toFixed(6)}</b></td></tr>
- <tr><td>Neighbourhood (census tract)</td><td>${esc(r.tract ? r.tract.name : "Unknown")}</td></tr>
- <tr><td>Inside a food desert?</td><td>${r.desertArea ? `Yes, Food desert ${r.desertArea}` : "No"}</td></tr>
-</table>
-
-<h2>Who the store would serve</h2>
-<p><span class="big">${fmt(r.gain)}</span> people would get a supermarket within ${miWord(d.rules.distMi)}.</p>
-<table>
- <tr><td>…of them living in food deserts</td><td>${fmt(r.gainDesert)}</td></tr>
- <tr><td>…households without a car</td><td>${fmt(r.noCar)}</td></tr>
- <tr><td>…people living in poverty</td><td>${fmt(r.poor)}</td></tr>
- <tr><td>Everyone living within ${miWord(d.rules.distMi)}</td><td>${fmt(r.all)}</td></tr>
- <tr><td>Nearest existing supermarket</td><td>${fmtMi(r.nearestMi)} miles</td></tr>
- <tr><td>Bus or rail stops within ¼ mile</td><td>${fmt(r.stops)}</td></tr>
-</table>
-
-<h2>Why we chose this location</h2>
-<div class="why">${esc(d.why || "(No reasons written.)")}</div>
-
-<h2>The store to build</h2>
-<table>
- <tr><td>Footprint</td><td><b>${s.length} m long × ${s.width} m wide</b> (${fmt(s.length * s.width)} m², ${fmt(s.length * s.width * SQFT)} sq ft)</td></tr>
- <tr><td>Height</td><td><b>${STORE_HEIGHT_M} m</b> (one storey)</td></tr>
- <tr><td>Direction</td><td>Long side turned <b>${s.rot}°</b> clockwise from east–west</td></tr>
- <tr><td>Plot</td><td>${plotTxt}<br>Rule of thumb: the plot should be at least ${fmtArea(3 * s.length * s.width)} (3 × the floor area) for parking and deliveries.</td></tr>
-</table>
-
-<h2>Next: build it in SketchUp</h2>
-<div class="sk"><ol>
- <li>Start a new model in metres. Draw a rectangle <b>${s.length} m × ${s.width} m</b>.</li>
- <li>Use <b>Push/Pull</b> to raise it <b>${STORE_HEIGHT_M} m</b>.</li>
- <li>If you are placing it on real terrain, rotate it <b>${s.rot}°</b> clockwise (seen from above) so it matches this plan.${s.rot ? "" : " (0° means no turn: the long side runs east–west.)"}</li>
- <li>Design the store: entrance, windows, loading bay for deliveries, and roof. Think about the people you are serving: how will people without a car arrive?</li>
- <li>Add the car park, bike racks and a path to the nearest bus stop on the plot.</li>
-</ol></div>
-
-<h2>How the food desert was defined</h2>
-<p>A neighbourhood (census tract) counts as a food desert when at least ${d.rules.pov}% of people live in poverty <b>and</b> the nearest supermarket is more than ${miWord(d.rules.distMi)} away${d.rules.incGrocery ? " (small grocery stores counted as supermarkets)" : ""}.
-People served assumes people are spread evenly across each neighbourhood and uses straight-line distance.</p>
-<p class="meta" style="font-size:12px">Data: U.S. Census Bureau American Community Survey 5-year estimates (via ArcGIS Living Atlas); USDA SNAP retailer locations; U.S. DOT BTS National Transit Map; Esri 3D Buildings. For learning, not official designations.</p>
-</body></html>`;
+function dataUrlToBytes(dataUrl) {
+  const bin = atob(dataUrl.split(",")[1]), out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
-$("reportBtn").addEventListener("click", async () => {
-  if (!state.store.placed) { setStatus("Place your store on the map first (step 2)."); return; }
-  if (($("why").value || "").trim().length < 20) {
-    if (!confirm("You have not written much about why you chose this location. Create the site plan anyway?")) return;
-  }
-  const tab = window.open("", "_blank");   // open now (inside the click) so pop-up blockers allow it
-  if (tab) tab.document.write("<p style='font-family:system-ui;padding:20px'>Making your site plan… taking pictures of your site.</p>");
+
+// Build the student's site plan as a real Word (.docx) document.
+function buildSitePlanDoc(D, d) {
+  const s = d.store, r = d.eval, chk = d.plot, BLUE = "0077B6";
+  const P = (text, o = {}) => new D.Paragraph({ spacing: { after: 120 }, ...o, children: [new D.TextRun({ text, ...(o.run || {}) })] });
+  const H = (text) => new D.Paragraph({ heading: D.HeadingLevel.HEADING_2, spacing: { before: 280, after: 120 }, children: [new D.TextRun({ text, color: BLUE })] });
+  const border = { style: D.BorderStyle.SINGLE, size: 4, color: "DDE2EA" };
+  const cell = (text, w, bold) => new D.TableCell({ width: { size: w, type: D.WidthType.DXA },
+    borders: { top: border, bottom: border, left: border, right: border }, margins: { top: 60, bottom: 60, left: 100, right: 100 },
+    children: [new D.Paragraph({ children: [new D.TextRun({ text: String(text), bold })] })] });
+  const table = (rows) => new D.Table({ width: { size: 9360, type: D.WidthType.DXA }, columnWidths: [4200, 5160],
+    rows: rows.map(([a, b]) => new D.TableRow({ children: [cell(a, 4200, false), cell(b, 5160, true)] })) });
+  const mi = miWord(d.rules.distMi);
+  const plotTxt = chk ? `${fmtArea(chk.area)}: ${chk.bigEnough ? "big enough" : "too small"}; the store ${chk.fits ? "fits on it" : "does not fit on it yet"}` : "Not measured";
+  const why = (d.why || "(No reasons written yet.)").split(/\n+/).map((t) => P(t));
+  const steps = [
+    `Start a new model in metres. Draw a rectangle ${s.length} m × ${s.width} m.`,
+    `Use Push/Pull to raise it ${STORE_HEIGHT_M} m.`,
+    `Turn it ${s.rot}° clockwise (seen from above) so it matches the plan.${s.rot ? "" : " 0° means the long side runs east–west."}`,
+    "Design the store: entrance, windows, a loading bay for deliveries, and the roof.",
+    "Add a car park, bike racks and a path to the nearest bus stop. How will people without a car get here?"
+  ].map((t, i) => P(`${i + 1}.  ${t}`, { indent: { left: 360 } }));
+
+  return new D.Document({
+    creator: d.team || "Student", title: `Supermarket site plan – ${d.city}`,
+    styles: { default: { document: { run: { font: "Arial", size: 22 } } } },
+    sections: [{
+      properties: { page: { size: { width: 12240, height: 15840 }, margin: { top: 1080, bottom: 1080, left: 1440, right: 1440 } } },
+      children: [
+        new D.Paragraph({ heading: D.HeadingLevel.TITLE, spacing: { after: 60 }, children: [new D.TextRun({ text: "Supermarket site plan", bold: true, size: 44 })] }),
+        P(`${d.city} · ${d.team || "Name not given"} · ${d.date}`, { run: { color: "5B6475" } }),
+        H("Our chosen site"),
+        new D.Paragraph({ children: [new D.ImageRun({ type: "jpg", data: d.imageBytes, transformation: { width: 624, height: 390 },
+          altText: { title: "Site picture", description: "Map view of the proposed supermarket", name: "site" } })] }),
+        P("The blue block is our proposed store. The dashed ring shows the area it serves. Red areas are food deserts.", { run: { italics: true, size: 18, color: "5B6475" } }),
+        table([
+          ["Location (latitude, longitude)", `${s.y.toFixed(6)}, ${s.x.toFixed(6)}`],
+          ["Neighbourhood (census tract)", r.tract ? r.tract.name : "Unknown"],
+          ["Inside a food desert?", r.desertArea ? `Yes, Food desert ${r.desertArea}` : "No"]
+        ]),
+        H("Who the store would serve"),
+        new D.Paragraph({ spacing: { after: 120 }, children: [new D.TextRun({ text: fmt(r.gain), bold: true, size: 44, color: BLUE }),
+          new D.TextRun({ text: `  people would get a supermarket within ${mi}.` })] }),
+        table([
+          ["…of them living in food deserts", fmt(r.gainDesert)],
+          ["…households without a car", fmt(r.noCar)],
+          ["…people living in poverty", fmt(r.poor)],
+          [`Everyone living within ${mi}`, fmt(r.all)],
+          ["Nearest existing supermarket", `${fmtMi(r.nearestMi)} miles`],
+          ["Bus or rail stops within ¼ mile", fmt(r.stops)]
+        ]),
+        H("Why we chose this location"),
+        ...why,
+        H("The store to build"),
+        table([
+          ["Footprint", `${s.length} m long × ${s.width} m wide (${fmt(s.length * s.width)} m², ${fmt(s.length * s.width * SQFT)} sq ft)`],
+          ["Height", `${STORE_HEIGHT_M} m (one storey)`],
+          ["Direction", `Long side turned ${s.rot}° clockwise from east–west`],
+          ["Plot", plotTxt],
+          ["Minimum plot (rule of thumb)", `${fmtArea(3 * s.length * s.width)}: 3 × floor area, for parking and deliveries`]
+        ]),
+        H("Next: build it in SketchUp"),
+        ...steps,
+        H("How the food desert was defined"),
+        P(`A neighbourhood (census tract) is a food desert when at least ${d.rules.pov}% of people live in poverty and the nearest supermarket is more than ${mi} away${d.rules.incGrocery ? " (small grocery stores counted as supermarkets)" : ""}. People served assumes people are spread evenly across each neighbourhood and uses straight-line distance.`),
+        P("Data: U.S. Census Bureau American Community Survey 5-year estimates (via ArcGIS Living Atlas); USDA SNAP retailer locations; U.S. DOT BTS National Transit Map; Esri 3D Buildings. For learning, not official designations.", { run: { size: 16, color: "5B6475" } })
+      ]
+    }]
+  });
+}
+
+async function makeSitePlan(kind) {
+  if (!state.store.placed) { setStatus("Place your store on the map first (step 2)."); return null; }
+  if (($("why").value || "").trim().length < 20 &&
+      !confirm("You have not written much about why you chose this location. Make the document anyway?")) return null;
   toolsOff();
-  const btn = $("reportBtn"); btn.disabled = true; btn.textContent = "📷 Taking pictures…";
-  const saved = view.camera.clone();
-  const s = state.store, lbl = labelLayer.visible;
+  const btns = [$("wordBtn"), $("gdocBtn")]; btns.forEach((b) => (b.disabled = true));
+  const btn = kind === "word" ? $("wordBtn") : $("gdocBtn"), label = btn.textContent;
+  btn.textContent = "Making it…";
   try {
-    labelLayer.visible = false;
-    const img3d = await capture({ center: [s.x, s.y], zoom: 17.5, tilt: 60, heading: 20 + s.rot });
-    const imgPlan = await capture({ center: [s.x, s.y], zoom: 18, tilt: 0, heading: 0 });
-    labelLayer.visible = lbl;
-    const imgArea = await capture({ center: [s.x, s.y], zoom: state.rules.distMi > 1.5 ? 12.5 : 13.5, tilt: 0, heading: 0 });
-    const html = buildReport({ city: state.centre.label, team: $("team").value.trim(), date: new Date().toLocaleDateString(),
-      why: $("why").value.trim(), store: { ...s }, eval: evaluateStore(s.x, s.y), plot: plotCheck(), rules: { ...state.rules }, img3d, imgPlan, imgArea });
-    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-    if (tab) tab.location.href = url; else window.open(url, "_blank");
-    const a = document.createElement("a");
-    a.href = url; a.download = `supermarket-site-plan-${state.centre.label.split(",")[0].replace(/\W+/g, "-").toLowerCase()}.html`; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 120000);
-    setStatus("Site plan created. Print it or save it as a PDF, then build your store in SketchUp.");
+    const [D, img] = await Promise.all([loadDocx(), takeSitePicture()]);
+    const s = state.store;
+    const doc = buildSitePlanDoc(D, { city: state.centre.label, team: $("team").value.trim(), date: new Date().toLocaleDateString(),
+      why: $("why").value.trim(), store: { ...s }, eval: evaluateStore(s.x, s.y), plot: plotCheck(), rules: { ...state.rules }, imageBytes: dataUrlToBytes(img) });
+    const blob = await D.Packer.toBlob(doc);
+    const name = `supermarket-site-plan-${state.centre.label.split(/[,(]/)[0].trim().replace(/\W+/g, "-").toLowerCase()}.docx`;
+    const url = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return name;
   } catch (err) {
-    console.error(err); if (tab) tab.close();
-    setStatus(`Could not create the site plan: ${err.message}`, true);
+    console.error(err);
+    setStatus(`Could not make the document: ${err.message}`, true);
+    return null;
   } finally {
-    labelLayer.visible = lbl;
-    view.goTo(saved, { animate: false }).catch(() => {});
-    btn.disabled = false; btn.textContent = "📄 Create my site plan";
+    btn.textContent = label; btns.forEach((b) => (b.disabled = false));
   }
+}
+$("wordBtn").addEventListener("click", async () => {
+  const name = await makeSitePlan("word");
+  if (name) setStatus(`Saved ${name} to your Downloads. Open it in Word, then build your store in SketchUp.`);
 });
+$("gdocBtn").addEventListener("click", async () => {
+  const name = await makeSitePlan("gdoc");
+  if (!name) return;
+  $("gdocFile").textContent = name; $("gdocModal").classList.add("show");
+});
+// Opening Drive is its own click, so pop-up blockers allow it.
+$("gdocOpen").addEventListener("click", () => { window.open("https://drive.google.com/drive/my-drive", "_blank"); $("gdocModal").classList.remove("show"); });
+$("gdocClose").addEventListener("click", () => $("gdocModal").classList.remove("show"));
 
 // ---------------------------------------------------------------------------
 // Loading a city
