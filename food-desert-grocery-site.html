@@ -1,8 +1,22 @@
 <!doctype html>
+<!--
+  Grocery Store Site Challenge
+  Version 0.6.0 (2026-09-24)
+
+  Changelog
+  0.6.0  2026-09-24  Store moved, resized and turned directly on the map (drag body, side dots, turn handle); panel sliders removed.
+  0.5.0  2026-09-24  Student output as Word (.docx) or Google Doc (via Drive upload); one screenshot instead of three.
+  0.4.0  2026-09-24  Reworked flow: explore numbered food desert areas, place one 3D store with live "people served" feedback,
+                     justify, create site plan for SketchUp. Site A/B/C comparison removed. Eight cities.
+  0.3.0  2026-09-24  On-map legend, plot measuring with minimum size, store rotate/resize (sliders).
+  0.2.0  2026-09-24  Imagery + 3D buildings by default, choosing a city flies there, simpler two-test food desert step.
+  0.1.0  2026-09-23  First build: ACS tracts, SNAP stores, transit, Esri 3D Buildings, three candidate sites.
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+<meta name="version" content="0.6.0" />
 <title>Grocery Store Site Challenge</title>
 <!-- ArcGIS Maps SDK for JavaScript 5.1 (components + core, single entry point). No API key needed: all layers are public. -->
 <script type="module" src="https://js.arcgis.com/5.1/"></script>
@@ -69,6 +83,11 @@
   .legend-head { width: 100%; text-align: left; background: none; color: var(--ink); border: 0; font-weight: 700; padding: 8px 12px; display: flex; justify-content: space-between; }
   #maplegend .legend { padding: 0 12px 10px; }
   #maplegend.collapsed .legend { display: none; }
+  .howto { list-style: none; padding: 0; margin: 6px 0 0; }
+  .howto li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin: 4px 0; }
+  .hico { width: 18px; height: 18px; border-radius: 4px; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; }
+  .hico.dot { border-radius: 50%; background: #fff; border: 3px solid #0077b6; }
+  .hico.rot { border-radius: 50%; background: #f28c28; color: #fff; font-weight: 700; }
   .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 20; display: none; align-items: center; justify-content: center; padding: 16px; }
   .modal.show { display: flex; }
   .modal-box { background: #fff; border-radius: 10px; padding: 16px 18px; width: min(440px, 100%); box-shadow: 0 6px 30px rgba(0,0,0,.35); }
@@ -104,18 +123,16 @@
     <!-- STEP 2 -->
     <h2><span class="step">2</span>Place your store <span class="mins">about 15–20 min</span></h2>
     <button id="placeBtn" class="big store">🏪 Place my store</button>
-    <p class="small muted" style="margin:6px 0 0">Move the mouse over the map and the store follows. Watch the numbers in the box on the map change. Click to put it down. To move it again, click the store. Look for empty land or car parks, not houses.</p>
+    <p class="small muted" style="margin:6px 0 0">Move the mouse over the map and the store follows. Watch the numbers in the box on the map change. Click to put it down. Look for empty land or car parks, not houses.</p>
     <div id="storeCard" class="card" style="display:none">
-      <b>Fit it to the site</b>
-      <div class="adjust">
-        <label>Turn <b><span id="rotVal">0</span>°</b></label>
-        <input id="rot" type="range" min="0" max="179" step="1" value="0" />
-        <label>Length <b><span id="lenVal">70</span> m</b></label>
-        <input id="len" type="range" min="30" max="150" step="5" value="70" />
-        <label>Width <b><span id="widVal">45</span> m</b></label>
-        <input id="wid" type="range" min="20" max="100" step="5" value="45" />
-        <p class="small muted" style="margin:4px 0 0">Floor area <b id="floorVal"></b>. Height is fixed at 9 m.</p>
-      </div>
+      <b>Fit it to the site: click your store on the map</b>
+      <ul class="howto">
+        <li><span class="hico" style="background:#0077b6"></span><b>Drag the store</b> to move it.</li>
+        <li><span class="hico dot"></span><b>Drag a white dot</b> to make that side longer or shorter.</li>
+        <li><span class="hico rot">⟳</span><b>Drag the orange circle</b> to turn it to line up with the roads.</li>
+      </ul>
+      <p class="small" style="margin:6px 0 0" id="sizeLine"></p>
+      <button id="resetSize" class="ghost" style="margin-top:6px">Reset size and turn</button>
       <div id="plotLine"></div>
     </div>
 
@@ -190,6 +207,7 @@
         <p>USDA’s official Food Access Research Atlas uses finer grids and more income measures. Results here are for learning, not official designations.</p>
       </div>
     </details>
+    <p class="small muted" style="margin:14px 0 0;text-align:center">Version <span id="appVersion"></span></p>
   </aside>
 
   <div id="mapwrap">
@@ -201,6 +219,10 @@
     </arcgis-scene>
     <div id="status">Loading map…</div>
     <div id="feedback"></div>
+    <div id="edithint" class="hintbar">
+      <div class="row"><span><b>Drag</b> the store to move · <b>drag a white dot</b> to resize · <b>drag ⟳</b> to turn. <span id="editSize" class="small"></span></span>
+        <button id="editDone" style="flex:none;background:#0077b6;border-color:#0077b6">Done</button></div>
+    </div>
     <div id="carryhint" class="hintbar">
       <div class="row"><span><b>Move the mouse</b> (or drag with a finger) to try places. <b>Click</b> to put the store down.</span>
         <button id="carryCancel" class="ghost" style="flex:none">Cancel</button></div>
@@ -233,6 +255,8 @@
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
+const APP_VERSION = "0.6.0";   // keep in step with the changelog at the top of this file
+console.info(`Grocery Store Site Challenge v${APP_VERSION}`);
 const COMMUNITIES = [
   { name: "Dallas, Texas (South Dallas)", lon: -96.752, lat: 32.765 },
   { name: "Baltimore, Maryland (West Baltimore)", lon: -76.643, lat: 39.300 },
@@ -533,9 +557,10 @@ await customElements.whenDefined("arcgis-scene");
 await sceneEl.viewOnReady();
 const view = sceneEl.view;
 const map = sceneEl.map;
-const [FeatureLayer, SceneLayer, GraphicsLayer, Graphic, reactiveUtils] = await $arcgis.import([
+const [FeatureLayer, SceneLayer, GraphicsLayer, Graphic, reactiveUtils, Point] = await $arcgis.import([
   "@arcgis/core/layers/FeatureLayer.js", "@arcgis/core/layers/SceneLayer.js",
-  "@arcgis/core/layers/GraphicsLayer.js", "@arcgis/core/Graphic.js", "@arcgis/core/core/reactiveUtils.js"
+  "@arcgis/core/layers/GraphicsLayer.js", "@arcgis/core/Graphic.js", "@arcgis/core/core/reactiveUtils.js",
+  "@arcgis/core/geometry/Point.js"
 ]);
 const SR = { wkid: 4326 };
 const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255, a]; };
@@ -553,7 +578,8 @@ const ringLayer = new GraphicsLayer({ title: "Store reach", elevationInfo: { mod
 const plotLayer = new GraphicsLayer({ title: "Plot", elevationInfo: { mode: "on-the-ground" } });
 const measureLayer = new GraphicsLayer({ title: "Measuring", elevationInfo: { mode: "on-the-ground" } });
 const myStoreLayer = new GraphicsLayer({ title: "Your store", elevationInfo: { mode: "relative-to-ground" } });
-map.addMany([ringLayer, plotLayer, measureLayer, myStoreLayer, labelLayer]);
+const handleLayer = new GraphicsLayer({ title: "Store handles", elevationInfo: { mode: "relative-to-ground" } });
+map.addMany([ringLayer, plotLayer, measureLayer, myStoreLayer, handleLayer, labelLayer]);
 
 // ---- Neighbourhoods -------------------------------------------------------
 function tractRenderer() {
@@ -669,32 +695,130 @@ function buildStopLayer() {
 }
 
 // ---- Your store -----------------------------------------------------------
-let gBox = null, gLabel = null, gRing = null;
+const LIMITS = { length: [30, 150], width: [20, 100] }, SNAP_M = 5, DEFAULT_SIZE = { length: 70, width: 45, rot: 0 };
+const clamp = (v, [lo, hi]) => Math.max(lo, Math.min(hi, v));
+const snap = (v) => Math.round(v / SNAP_M) * SNAP_M;
+const norm360 = (a) => ((a % 360) + 360) % 360;
+// Store frame: x runs along the length, y along the width, turned rot° clockwise from east–west.
+function toLocal(lon, lat, s) {
+  const mLon = M_PER_DEG * Math.cos(s.y * Math.PI / 180), t = s.rot * Math.PI / 180, c = Math.cos(t), n = Math.sin(t);
+  const E = (lon - s.x) * mLon, N = (lat - s.y) * M_PER_DEG;
+  return { x: E * c - N * n, y: E * n + N * c, E, N };
+}
+function fromLocal(x, y, s) {
+  const mLon = M_PER_DEG * Math.cos(s.y * Math.PI / 180), t = s.rot * Math.PI / 180, c = Math.cos(t), n = Math.sin(t);
+  return [s.x + (x * c + y * n) / mLon, s.y + (-x * n + y * c) / M_PER_DEG];
+}
+const rotOffset = (s) => Math.max(15, 0.5 * s.width);
+function handleSpots(s) {   // [id, local x, local y]
+  return [["+x", s.length / 2, 0], ["-x", -s.length / 2, 0], ["+y", 0, s.width / 2], ["-y", 0, -s.width / 2], ["rot", 0, s.width / 2 + rotOffset(s)]];
+}
+// New shape after dragging a handle, worked out from the shape when the drag started.
+function applyHandleDrag(start, handle, lon, lat) {
+  const p = toLocal(lon, lat, start), out = { ...start };
+  if (handle === "rot") {
+    const bearing = Math.atan2(p.E, p.N) * 180 / Math.PI;
+    let rot = norm360(start.rot + bearing - start.grabBearing);
+    for (const q of [0, 90, 180, 270, 360]) if (Math.abs(rot - q) < 3) rot = q % 360;   // gentle snap to square
+    out.rot = Math.round(rot);
+    return out;
+  }
+  const along = handle[1] === "x" ? "length" : "width", sign = handle[0] === "+" ? 1 : -1;
+  const pos = handle[1] === "x" ? p.x : p.y, half = start[along] / 2;
+  const size = clamp(snap(sign * pos + half), LIMITS[along]);   // opposite side stays where it was
+  const shift = sign * (size - start[along]) / 2;
+  const [x, y] = handle[1] === "x" ? fromLocal(shift, 0, start) : fromLocal(0, shift, start);
+  out[along] = size; out.x = x; out.y = y;
+  return out;
+}
+
+let gBox = null, gLabel = null, gRing = null, gHandles = [], gRotLine = null;
+const boxSymbol = (editing) => ({ type: "polygon-3d", symbolLayers: [{ type: "extrude", size: STORE_HEIGHT_M, material: { color: C.store },
+  edges: { type: "solid", color: editing ? [255, 210, 31, 1] : [255, 255, 255, 0.9], size: editing ? 2.5 : 1.2 } }] });
+const labelSymbol = (text) => ({ type: "point-3d", verticalOffset: { screenLength: 40, maxWorldLength: 300, minWorldLength: 15 },
+  callout: { type: "line", size: 1.5, color: C.store },
+  symbolLayers: [{ type: "text", text, size: 12, material: { color: "white" }, background: { color: C.store } }] });
+const handleSymbol = (isRot) => ({ type: "point-3d", symbolLayers: isRot
+  ? [{ type: "icon", resource: { primitive: "circle" }, material: { color: "#f28c28" }, size: 22, outline: { color: "white", size: 2 } },
+     { type: "text", text: "⟳", size: 13, material: { color: "white" } }]
+  : [{ type: "icon", resource: { primitive: "circle" }, material: { color: "white" }, size: 16, outline: { color: C.store, size: 3 } }] });
+const sizeText = (s) => `${s.length} m × ${s.width} m · turned ${s.rot % 180}°`;
+
 function drawMyStore() {
   const s = state.store;
-  if (!s.placed && !state.carrying) { myStoreLayer.removeAll(); ringLayer.removeAll(); gBox = gLabel = gRing = null; return; }
+  if (!s.placed && !state.carrying) {
+    myStoreLayer.removeAll(); ringLayer.removeAll(); handleLayer.removeAll();
+    gBox = gLabel = gRing = gRotLine = null; gHandles = []; return;
+  }
   const box = { type: "polygon", rings: [rectRing(s.x, s.y, s.length, s.width, s.rot)], spatialReference: SR };
   const ring = { type: "polygon", rings: [circleRing(s.x, s.y, state.rules.distMi * MILE)], spatialReference: SR };
   const pt = { type: "point", x: s.x, y: s.y, z: STORE_HEIGHT_M, spatialReference: SR };
+  const label = state.drag && state.drag.handle !== "body" ? sizeText(s) : "Your store";
   if (!gBox) {
-    gBox = new Graphic({ geometry: box, attributes: { mystore: 1 },
-      symbol: { type: "polygon-3d", symbolLayers: [{ type: "extrude", size: STORE_HEIGHT_M, material: { color: C.store }, edges: { type: "solid", color: [255, 255, 255, 0.9], size: 1.2 } }] } });
-    gLabel = new Graphic({ geometry: pt, symbol: { type: "point-3d", verticalOffset: { screenLength: 40, maxWorldLength: 300, minWorldLength: 15 },
-      callout: { type: "line", size: 1.5, color: C.store },
-      symbolLayers: [{ type: "text", text: "Your store", size: 12, material: { color: "white" }, background: { color: C.store } }] } });
+    gBox = new Graphic({ geometry: box, attributes: { mystore: 1 }, symbol: boxSymbol(state.editing) });
+    gLabel = new Graphic({ geometry: pt, symbol: labelSymbol(label) });
     gRing = new Graphic({ geometry: ring, symbol: { type: "simple-fill", color: hexA(C.ring, 0.07), outline: { color: hexA(C.ring, 1), width: 2.5, style: "dash" } } });
     myStoreLayer.addMany([gBox, gLabel]); ringLayer.add(gRing);
   } else { gBox.geometry = box; gLabel.geometry = pt; gRing.geometry = ring; }
+  if (gBox.symbol.symbolLayers.getItemAt(0).edges.size !== boxSymbol(state.editing).symbolLayers[0].edges.size) gBox.symbol = boxSymbol(state.editing);
+  if (gLabel._text !== label) { gLabel.symbol = labelSymbol(label); gLabel._text = label; }
+  drawHandles();
+  const sl = $("sizeLine"); if (sl) sl.innerHTML = `Size <b>${s.length} m × ${s.width} m</b>, turned <b>${s.rot % 180}°</b>. Floor area <b>${fmt(s.length * s.width)} m²</b> (${fmt(s.length * s.width * SQFT)} sq ft). Height is fixed at ${STORE_HEIGHT_M} m.`;
+  const es = $("editSize"); if (es) es.textContent = `(${sizeText(s)})`;
 }
+function drawHandles() {
+  const s = state.store;
+  if (!state.editing || state.carrying) { handleLayer.removeAll(); gHandles = []; gRotLine = null; return; }
+  const spots = handleSpots(s).map(([id, lx, ly]) => { const [x, y] = fromLocal(lx, ly, s); return { id, x, y }; });
+  const [ex, ey] = fromLocal(0, s.width / 2, s), rotSpot = spots.find((h) => h.id === "rot");
+  const line = { type: "polyline", paths: [[[ex, ey, STORE_HEIGHT_M], [rotSpot.x, rotSpot.y, STORE_HEIGHT_M]]], spatialReference: SR, hasZ: true };
+  if (!gHandles.length) {
+    gRotLine = new Graphic({ geometry: line, symbol: { type: "line-3d", symbolLayers: [{ type: "line", size: 2, material: { color: "#f28c28" } }] } });
+    handleLayer.add(gRotLine);
+    gHandles = spots.map((h) => new Graphic({ geometry: { type: "point", x: h.x, y: h.y, z: STORE_HEIGHT_M, spatialReference: SR },
+      attributes: { handle: h.id }, symbol: handleSymbol(h.id === "rot") }));
+    handleLayer.addMany(gHandles);
+  } else {
+    gRotLine.geometry = line;
+    gHandles.forEach((g, i) => (g.geometry = { type: "point", x: spots[i].x, y: spots[i].y, z: STORE_HEIGHT_M, spatialReference: SR }));
+  }
+}
+
+// Which part of the store is under a screen point? Worked out on screen, so it is instant (no waiting).
+function groundZ(x, y) {
+  try { return view.groundView.elevationSampler.queryElevation(new Point({ x, y, spatialReference: SR })).z || 0; } catch { return 0; }
+}
+function screenOf(x, y, z) { return view.toScreen(new Point({ x, y, z, spatialReference: SR })); }
+function convexHull(pts) {
+  pts = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], hi = [];
+  for (const p of pts) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (const p of pts.reverse()) { while (hi.length >= 2 && cross(hi[hi.length - 2], hi[hi.length - 1], p) <= 0) hi.pop(); hi.push(p); }
+  return lo.slice(0, -1).concat(hi.slice(0, -1));
+}
+function storePartAt(sx, sy) {
+  const s = state.store; if (!s.placed || state.carrying) return null;
+  const zg = groundZ(s.x, s.y), top = zg + STORE_HEIGHT_M;
+  if (state.editing) {
+    for (const [id, lx, ly] of handleSpots(s)) {
+      const [x, y] = fromLocal(lx, ly, s), p = screenOf(x, y, top);
+      if (p && Math.hypot(p.x - sx, p.y - sy) <= (id === "rot" ? 18 : 14)) return id;
+    }
+  }
+  const pts = [];
+  for (const [x, y] of rectRing(s.x, s.y, s.length, s.width, s.rot).slice(0, 4))
+    for (const z of [zg, top]) { const p = screenOf(x, y, z); if (p) pts.push([p.x, p.y]); }
+  return pts.length >= 3 && pointInRing(sx, sy, convexHull(pts)) ? "body" : null;
+}
+
 function setStorePos(x, y) {
   state.store.x = x; state.store.y = y;
   drawMyStore(); renderFeedback(); renderPlotLine();
 }
-let rafId = 0, pendingPos = null;
-function queueStorePos(x, y) {
-  pendingPos = [x, y];
-  if (!rafId) rafId = requestAnimationFrame(() => { rafId = 0; setStorePos(...pendingPos); });
-}
+let rafId = 0, pendingFn = null;
+function queueFrame(fn) { pendingFn = fn; if (!rafId) rafId = requestAnimationFrame(() => { rafId = 0; pendingFn(); }); }
+const queueStorePos = (x, y) => queueFrame(() => setStorePos(x, y));
 
 // ---------------------------------------------------------------------------
 // Panel + feedback rendering
@@ -770,7 +894,6 @@ function renderFeedback() {
 
 function renderPlotLine() {
   const s = state.store; if (!s.placed) return;
-  $("floorVal").textContent = `${fmt(s.length * s.width)} m² (${fmt(s.length * s.width * SQFT)} sq ft)`;
   const need = `Needs a plot of at least <b>${fmtArea(minPlotM2())}</b> for the store, parking and deliveries.`;
   const chk = plotCheck();
   $("plotLine").innerHTML = !chk
@@ -786,14 +909,21 @@ function renderPlotLine() {
 // ---------------------------------------------------------------------------
 // Placing and moving the store
 // ---------------------------------------------------------------------------
-function toolsOff() { if (state.carrying) cancelCarry(); cancelMeasure(); }
+function toolsOff() { if (state.carrying) cancelCarry(); cancelMeasure(); endEdit(); }
+function hidePopup() { view.closePopup?.(); if (view.popup) view.popup.visible = false; }
+function noteBest() {
+  const r = evaluateStore(state.store.x, state.store.y);
+  if (!state.best || r.gain > state.best.gain) state.best = { x: state.store.x, y: state.store.y, gain: r.gain };
+}
+
+// ---- Carrying: the store follows the pointer until you click (first placement, or "Pick up") ----
 function startCarry() {
-  cancelMeasure();
+  cancelMeasure(); endEdit();
   const s = state.store;
   state.carryFrom = s.placed ? { x: s.x, y: s.y } : null;
   if (!s.placed) { const c = view.center; s.x = c.longitude; s.y = c.latitude; }
   state.carrying = true;
-  view.popupEnabled = false; if (view.popup) view.popup.visible = false;
+  view.popupEnabled = false; hidePopup();
   $("carryhint").style.display = "block";
   drawMyStore(); renderFeedback();
 }
@@ -802,37 +932,87 @@ function cancelCarry() {
   if (state.carryFrom) setStorePos(state.carryFrom.x, state.carryFrom.y); else { drawMyStore(); renderFeedback(); }
 }
 function dropStoreAt(x, y, fly) {
-  state.carrying = false; $("carryhint").style.display = "none"; view.popupEnabled = true;
+  state.carrying = false; $("carryhint").style.display = "none";
   state.store.placed = true;
-  setStorePos(x, y);
+  setStorePos(x, y); noteBest();
+  $("storeCard").style.display = "block"; $("placeBtn").textContent = "🏪 Pick up my store";
+  startEdit();
+  if (fly) view.goTo({ center: [x, y], zoom: 16.5, tilt: 55 }, { duration: 1500 }).catch(() => {});
   const r = state.lastEval;
-  if (!state.best || r.gain > state.best.gain) state.best = { x, y, gain: r.gain };
-  $("storeCard").style.display = "block"; $("placeBtn").textContent = "🏪 Move my store";
-  renderPlotLine(); renderFeedback();
-  if (fly) view.goTo({ center: [x, y], zoom: 16, tilt: 55 }, { duration: 1500 }).catch(() => {});
-  setStatus(r.desertArea ? `Store placed in Food desert ${r.desertArea}. Turn and resize it to fit the site.` : "Store placed. It is not inside a food desert. Is that the best choice?");
+  setStatus(r.desertArea ? `Store placed in Food desert ${r.desertArea}. Now drag the dots to fit it to the site.` : "Store placed, but not inside a food desert. Is that the best choice?");
 }
 $("placeBtn").addEventListener("click", () => (state.carrying ? cancelCarry() : startCarry()));
 $("carryCancel").addEventListener("click", cancelCarry);
 
-const groundPoint = (sx, sy) => view.toMap({ x: sx, y: sy }, { exclude: [myStoreLayer, labelLayer, ringLayer] });
+// ---- Editing: drag the store, its side dots and the turn handle ----
+function startEdit() {
+  if (!state.store.placed) return;
+  state.editing = true; view.popupEnabled = false; hidePopup();
+  $("edithint").style.display = "block"; drawMyStore();
+}
+function endEdit() {
+  if (!state.editing) return;
+  state.editing = false; state.drag = null;
+  $("edithint").style.display = "none"; view.popupEnabled = true; drawMyStore(); renderFeedback();
+}
+$("editDone").addEventListener("click", endEdit);
+$("resetSize").addEventListener("click", () => { Object.assign(state.store, DEFAULT_SIZE); drawMyStore(); renderPlotLine(); });
+
+const groundPoint = (sx, sy) => view.toMap({ x: sx, y: sy }, { exclude: [myStoreLayer, handleLayer, labelLayer, ringLayer] });
+function applyDrag(d, mp) {
+  const s = state.store;
+  if (d.handle === "body") {
+    const mLon = M_PER_DEG * Math.cos(mp.latitude * Math.PI / 180);
+    setStorePos(mp.longitude - d.offE / mLon, mp.latitude - d.offN / M_PER_DEG);
+  } else {
+    const ns = applyHandleDrag(d.start, d.handle, mp.longitude, mp.latitude);
+    Object.assign(s, { x: ns.x, y: ns.y, length: ns.length, width: ns.width, rot: ns.rot });
+    drawMyStore(); renderFeedback(); renderPlotLine();
+  }
+}
+view.on("pointer-down", (e) => {
+  if (state.carrying || state.measure || !state.store.placed) return;
+  const part = storePartAt(e.x, e.y);
+  if (!part) return;
+  if (!state.editing) startEdit();
+  const mp = groundPoint(e.x, e.y), s = state.store, d = { handle: part, moved: false, start: { ...s } };
+  if (mp) {
+    const p = toLocal(mp.longitude, mp.latitude, s);
+    d.offE = p.E; d.offN = p.N;                                    // keep the grab point under the finger
+    d.start.grabBearing = Math.atan2(p.E, p.N) * 180 / Math.PI;    // for turning
+  } else { d.offE = d.offN = 0; d.start.grabBearing = 0; }
+  state.drag = d;
+});
+view.on("pointer-up", () => { if (state.drag && !state.drag.moved) state.drag = null; });
+view.on("drag", (e) => {
+  if (state.carrying) {   // finger drag while carrying also moves the store
+    e.stopPropagation();
+    const mp = groundPoint(e.x, e.y);
+    if (mp) queueStorePos(mp.longitude, mp.latitude);
+    if (e.action === "end" && mp) dropStoreAt(mp.longitude, mp.latitude);
+    return;
+  }
+  const d = state.drag; if (!d) return;
+  e.stopPropagation();   // stop the map moving while the store is being dragged
+  d.moved = true;
+  const mp = groundPoint(e.x, e.y);
+  if (mp) queueFrame(() => applyDrag(d, mp));
+  if (e.action === "end") { state.drag = null; queueFrame(() => { if (mp) applyDrag(d, mp); drawMyStore(); noteBest(); renderFeedback(); }); }
+});
 view.on("pointer-move", (e) => {
   if (state.carrying) { const mp = groundPoint(e.x, e.y); if (mp) queueStorePos(mp.longitude, mp.latitude); return; }
-  if (state.measure && state.measure.pts.length) { const mp = groundPoint(e.x, e.y); if (mp) drawMeasure([mp.longitude, mp.latitude]); }
+  if (state.measure && state.measure.pts.length) { const mp = groundPoint(e.x, e.y); if (mp) drawMeasure([mp.longitude, mp.latitude]); return; }
+  if (state.store.placed && !state.drag) {   // show a hand cursor over the store and its handles
+    const part = storePartAt(e.x, e.y);
+    sceneEl.style.cursor = !part ? "" : part === "body" ? "move" : part === "rot" ? "grab" : "ew-resize";
+  }
 });
-view.on("drag", (e) => {   // finger or mouse drag while carrying moves the store instead of the map
-  if (!state.carrying) return;
-  e.stopPropagation();
-  const mp = groundPoint(e.x, e.y);
-  if (mp) queueStorePos(mp.longitude, mp.latitude);
-  if (e.action === "end" && mp) dropStoreAt(mp.longitude, mp.latitude);
-});
-view.on("click", async (e) => {
+view.on("click", (e) => {
   if (state.carrying) { e.stopPropagation(); const mp = groundPoint(e.x, e.y) || e.mapPoint; if (mp) dropStoreAt(mp.longitude, mp.latitude); return; }
   if (state.measure) { e.stopPropagation(); if (e.mapPoint) addMeasurePoint(e.mapPoint); return; }
   if (!state.store.placed) return;
-  const hit = await view.hitTest(e, { include: [myStoreLayer] });   // click the store to pick it up
-  if (hit.results.length) { if (view.popup) view.popup.visible = false; startCarry(); }
+  if (storePartAt(e.x, e.y)) { e.stopPropagation(); if (!state.editing) startEdit(); return; }   // click the store to edit it
+  if (state.editing) { e.stopPropagation(); endEdit(); }                                           // click elsewhere to finish
 });
 view.on("double-click", (e) => {
   if (!state.measure) return;
@@ -842,16 +1022,12 @@ view.on("double-click", (e) => {
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") toolsOff(); });
 
-// Rotate / resize
-[["rot", "rotVal", "rot"], ["len", "lenVal", "length"], ["wid", "widVal", "width"]].forEach(([id, out, key]) => {
-  $(id).addEventListener("input", (e) => { state.store[key] = Number(e.target.value); $(out).textContent = e.target.value; drawMyStore(); renderPlotLine(); });
-});
-
 // ---------------------------------------------------------------------------
 // Measuring the plot
 // ---------------------------------------------------------------------------
 function startMeasure() {
   if (state.carrying) cancelCarry();
+  endEdit();
   state.measure = { pts: [] };
   $("measureLive").textContent = ""; $("measurehint").style.display = "block";
   view.popupEnabled = false;
@@ -946,13 +1122,13 @@ function buildSitePlanDoc(D, d) {
   const steps = [
     `Start a new model in metres. Draw a rectangle ${s.length} m × ${s.width} m.`,
     `Use Push/Pull to raise it ${STORE_HEIGHT_M} m.`,
-    `Turn it ${s.rot}° clockwise (seen from above) so it matches the plan.${s.rot ? "" : " 0° means the long side runs east–west."}`,
+    `Turn it ${s.rot % 180}° clockwise (seen from above) so it matches the plan.${s.rot % 180 ? "" : " 0° means the long side runs east–west."}`,
     "Design the store: entrance, windows, a loading bay for deliveries, and the roof.",
     "Add a car park, bike racks and a path to the nearest bus stop. How will people without a car get here?"
   ].map((t, i) => P(`${i + 1}.  ${t}`, { indent: { left: 360 } }));
 
   return new D.Document({
-    creator: d.team || "Student", title: `Supermarket site plan – ${d.city}`,
+    creator: d.team || "Student", title: `Supermarket site plan – ${d.city}`, description: `Grocery Store Site Challenge v${APP_VERSION}`,
     styles: { default: { document: { run: { font: "Arial", size: 22 } } } },
     sections: [{
       properties: { page: { size: { width: 12240, height: 15840 }, margin: { top: 1080, bottom: 1080, left: 1440, right: 1440 } } },
@@ -985,7 +1161,7 @@ function buildSitePlanDoc(D, d) {
         table([
           ["Footprint", `${s.length} m long × ${s.width} m wide (${fmt(s.length * s.width)} m², ${fmt(s.length * s.width * SQFT)} sq ft)`],
           ["Height", `${STORE_HEIGHT_M} m (one storey)`],
-          ["Direction", `Long side turned ${s.rot}° clockwise from east–west`],
+          ["Direction", `Long side turned ${s.rot % 180}° clockwise from east–west`],
           ["Plot", plotTxt],
           ["Minimum plot (rule of thumb)", `${fmtArea(3 * s.length * s.width)}: 3 × floor area, for parking and deliveries`]
         ]),
@@ -993,7 +1169,8 @@ function buildSitePlanDoc(D, d) {
         ...steps,
         H("How the food desert was defined"),
         P(`A neighbourhood (census tract) is a food desert when at least ${d.rules.pov}% of people live in poverty and the nearest supermarket is more than ${mi} away${d.rules.incGrocery ? " (small grocery stores counted as supermarkets)" : ""}. People served assumes people are spread evenly across each neighbourhood and uses straight-line distance.`),
-        P("Data: U.S. Census Bureau American Community Survey 5-year estimates (via ArcGIS Living Atlas); USDA SNAP retailer locations; U.S. DOT BTS National Transit Map; Esri 3D Buildings. For learning, not official designations.", { run: { size: 16, color: "5B6475" } })
+        P("Data: U.S. Census Bureau American Community Survey 5-year estimates (via ArcGIS Living Atlas); USDA SNAP retailer locations; U.S. DOT BTS National Transit Map; Esri 3D Buildings. For learning, not official designations.", { run: { size: 16, color: "5B6475" } }),
+        P(`Made with Grocery Store Site Challenge v${APP_VERSION}.`, { run: { size: 16, color: "5B6475" } })
       ]
     }]
   });
@@ -1046,7 +1223,7 @@ async function analyse(lon, lat, label, fly = true) {
   document.querySelectorAll("button, #community").forEach((b) => (b.disabled = true));
   toolsOff();
   state.centre = { lon, lat, label };
-  state.store.placed = false; state.best = null; state.plot = null;
+  state.store.placed = false; Object.assign(state.store, DEFAULT_SIZE); state.best = null; state.plot = null;
   plotLayer.removeAll(); drawMyStore(); renderFeedback();
   $("storeCard").style.display = "none"; $("placeBtn").textContent = "🏪 Place my store";
   $("summary").innerHTML = ""; $("desertList").innerHTML = ""; labelLayer.removeAll();
@@ -1109,6 +1286,7 @@ $("legendToggle").addEventListener("click", () => {
 });
 if (window.matchMedia("(max-width: 820px)").matches) { $("maplegend").classList.add("collapsed"); $("legendArrow").textContent = "▸"; }
 
+$("appVersion").textContent = APP_VERSION;
 renderLegend();
 const first = COMMUNITIES[0];
 analyse(first.lon, first.lat, first.name, false);   // the scene already opens on the first city
