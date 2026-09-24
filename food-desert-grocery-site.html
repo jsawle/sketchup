@@ -58,6 +58,10 @@
   #status.hide { opacity: 0; }
   #movehint { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: #fff8d6; border: 1px solid #e3c95a; padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 5; display: none; }
   details summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+  .tests > div { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0; }
+  .tnum { background: var(--desert); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex: none; margin-top: 2px; }
+  .headline { font-size: 15px; line-height: 1.4; margin: 0; }
+  .headline b.big { color: var(--desert); font-size: 20px; }
   .note { background: #f3f6fb; border-left: 3px solid var(--transit); padding: 8px 10px; border-radius: 4px; }
   .warn { background: #fff4e5; border-left: 3px solid var(--access); padding: 8px 10px; border-radius: 4px; }
   @media (max-width: 820px) {
@@ -75,43 +79,52 @@
 
     <h2><span class="step">1</span>Choose a community</h2>
     <select id="community"></select>
-    <div class="row" style="margin-top:6px">
-      <button id="analyse">Analyse</button>
-      <button id="analyseHere" class="ghost" title="Analyse the area at the centre of the map">Analyse map centre</button>
-    </div>
-    <p class="small muted">Tip: navigate anywhere in the United States and press “Analyse map centre” to study your own community.</p>
-    <div id="summary"></div>
+    <button id="analyseHere" class="ghost" style="width:100%;margin-top:6px" title="Study the area in the middle of the map">Or study the area on screen</button>
+    <p class="small muted">Move the map anywhere in the United States, then press the button to study your own community.</p>
 
-    <h2><span class="step">2</span>Define the food desert</h2>
-    <p class="small">The U.S. Department of Agriculture calls an urban census tract a <b>low-income, low-access</b> area when many people are poor <i>and</i> live more than a mile from a supermarket. Adjust the rules and watch the map change.</p>
-    <div class="card slider">
-      <label>Low income: poverty rate at least <b><span id="povVal">20</span>%</b></label>
-      <input id="pov" type="range" min="10" max="40" step="1" value="20" />
-      <label>Low access: more than <b><span id="distVal">1.0</span> mile(s)</b> to a full-service store</label>
-      <input id="dist" type="range" min="0.5" max="3" step="0.25" value="1" />
-      <label style="justify-content:flex-start;gap:6px"><input id="incGrocery" type="checkbox" /> Count SNAP “Grocery Stores” as full-service</label>
+    <h2><span class="step">2</span>Find the food desert</h2>
+    <p class="small">A neighbourhood is a <b>food desert</b> when it fails <b>both</b> of these tests:</p>
+    <div class="card tests">
+      <div><span class="tnum">1</span><div><b>Low income</b><br><span class="small">At least <b class="povRule">20</b>% of people live in poverty.</span></div></div>
+      <div><span class="tnum">2</span><div><b>Low access</b><br><span class="small">The nearest supermarket is more than <b class="distRule">1</b> mile away.</span></div></div>
     </div>
-    <label class="small">Colour census tracts by</label>
-    <select id="colourBy">
-      <option value="status">Food desert status</option>
-      <option value="pov">Poverty rate (%)</option>
-      <option value="noveh">Households without a vehicle (%)</option>
-      <option value="dist">Distance to nearest full-service store (miles)</option>
-    </select>
+    <div id="summary"></div>
     <div id="legend" class="legend card"></div>
+    <p class="small muted">Click any neighbourhood on the map to see how it scored on each test.</p>
 
     <details class="card">
-      <summary>Map layers</summary>
+      <summary>Change the rules (optional)</summary>
+      <div class="slider" style="margin-top:8px">
+        <label>Low income: poverty at least <b><span id="povVal">20</span>%</b></label>
+        <input id="pov" type="range" min="10" max="40" step="1" value="20" />
+        <label>Low access: more than <b><span id="distVal">1</span> mile(s)</b></label>
+        <input id="dist" type="range" min="0.5" max="3" step="0.25" value="1" />
+        <label style="justify-content:flex-start;gap:6px"><input id="incGrocery" type="checkbox" /> Count small grocery stores as supermarkets</label>
+        <p class="small muted" style="margin:6px 0 0">The standard rule (USDA) is 20% poverty and 1 mile in cities.</p>
+      </div>
+    </details>
+
+    <details class="card">
+      <summary>Explore more data</summary>
       <div style="margin-top:6px">
-        <label><input type="checkbox" id="lyrTracts" checked /> Census tracts (ACS)</label><br />
-        <label><input type="checkbox" id="lyrStores" checked /> Food stores (SNAP retailers)</label><br />
-        <label><input type="checkbox" id="lyrStops" checked /> Transit stops</label><br />
-        <label><input type="checkbox" id="lyrRoutes" checked /> Transit routes</label><br />
+        <label class="small">Colour neighbourhoods by</label>
+        <select id="colourBy">
+          <option value="status">Food desert or not</option>
+          <option value="pov">Poverty rate (%)</option>
+          <option value="noveh">Households without a car (%)</option>
+          <option value="dist">Distance to nearest supermarket (miles)</option>
+        </select>
+        <p class="small" style="margin:10px 0 2px"><b>Show on map</b></p>
+        <label><input type="checkbox" id="lyrTracts" checked /> Neighbourhoods (census tracts)</label><br />
+        <label><input type="checkbox" id="lyrStores" checked /> Food stores</label><br />
+        <label><input type="checkbox" id="lyrStops" checked /> Bus and rail stops</label><br />
+        <label><input type="checkbox" id="lyrRoutes" checked /> Bus and rail routes</label><br />
         <label><input type="checkbox" id="lyrBuildings" checked /> 3D buildings</label><br />
         <label class="small" style="display:block;margin-top:6px">Basemap</label>
         <select id="basemap">
-          <option value="gray-vector">Light gray</option>
           <option value="hybrid">Imagery with labels</option>
+          <option value="satellite">Imagery</option>
+          <option value="gray-vector">Light gray</option>
           <option value="topo-vector">Topographic</option>
         </select>
       </div>
@@ -137,7 +150,7 @@
     <ul class="small">
       <li>Which site helps the most people who do not have a car? Why does that matter?</li>
       <li>Is the site with the most people nearby always the best choice?</li>
-      <li>Change the poverty or distance rule. Does the food desert grow or shrink? Who decides the rule?</li>
+      <li>Open “Change the rules”. Does the food desert grow or shrink? Who should decide the rule?</li>
       <li>What does this data <i>not</i> tell you? (Store prices? Opening hours? Safety of the walk?)</li>
     </ul>
 
@@ -154,8 +167,8 @@
   </aside>
 
   <div id="mapwrap">
-    <arcgis-scene id="scene" basemap="gray-vector" ground="world-elevation"
-      camera-position="-96.76, 32.70, 9000" camera-tilt="50">
+    <arcgis-scene id="scene" basemap="hybrid" ground="world-elevation"
+      camera-position="-96.752, 32.715, 5000" camera-tilt="55" camera-heading="0">
       <arcgis-zoom slot="top-right"></arcgis-zoom>
       <arcgis-navigation-toggle slot="top-right"></arcgis-navigation-toggle>
       <arcgis-compass slot="top-right"></arcgis-compass>
@@ -399,12 +412,11 @@ function tractRenderer() {
   const outline = { color: [255, 255, 255, 0.9], width: 0.8 };
   const fill = (c, a = 0.55) => ({ type: "simple-fill", color: hexA(c, a), outline });
   if (state.colourBy === "status") {
-    return { type: "unique-value", field: "status", defaultSymbol: fill(STATUS_COLOURS.ok, 0.25),
-      uniqueValueInfos: [
-        { value: "desert", label: "Food desert (low income + low access)", symbol: fill(STATUS_COLOURS.desert) },
-        { value: "access", label: "Low access only", symbol: fill(STATUS_COLOURS.access) },
-        { value: "income", label: "Low income only", symbol: fill(STATUS_COLOURS.income, 0.45) },
-        { value: "ok", label: "Neither", symbol: fill(STATUS_COLOURS.ok, 0.25) }] };
+    // Two classes only: food desert (filled red) or not (outline only, so the imagery shows through).
+    const notDesert = { type: "simple-fill", color: [255, 255, 255, 0.04], outline: { color: [255, 255, 255, 0.85], width: 1 } };
+    const desert = { type: "simple-fill", color: hexA(STATUS_COLOURS.desert, 0.5), outline: { color: [255, 225, 225, 1], width: 1.6 } };
+    return { type: "unique-value", field: "isDesert", defaultSymbol: notDesert,
+      uniqueValueInfos: [{ value: "yes", label: "Food desert", symbol: desert }, { value: "no", label: "Not a food desert", symbol: notDesert }] };
   }
   const cfg = {
     pov:   { field: "povPct",   breaks: [10, 20, 30, 40], unit: "%", ramp: ["#f7eef6", "#d4b9da", "#c994c7", "#df65b0", "#980043"] },
@@ -429,8 +441,21 @@ function buildTractLayer() {
   const graphics = state.tracts.map((t) => new Graphic({
     geometry: { type: "polygon", rings: t.rings, spatialReference: { wkid: 4326 } },
     attributes: { OBJECTID: t.oid, GEOID: t.geoid, NAME: t.name, pop: t.pop, poor: t.poor, povPct: t.povPct ?? null,
-      hh: t.hh, noveh: t.noveh, novehPct: t.novehPct ?? null, distMi: Math.round(t.distMi * 100) / 100, status: t.status }
+      hh: t.hh, noveh: t.noveh, novehPct: t.novehPct ?? null, distMi: Math.round(t.distMi * 100) / 100, status: t.status,
+      isDesert: t.status === "desert" ? "yes" : "no" }
   }));
+  const tick = (ok) => ok ? `<b style="color:#c8322d">✔ Yes</b>` : `<b style="color:#1a8f4a">✘ No</b>`;
+  const tractPopup = ({ graphic }) => {
+    const a = graphic.attributes, r = state.rules;
+    const lowInc = a.povPct != null && a.povPct >= r.pov, lowAcc = a.status === "desert" || a.status === "access";
+    return `<p style="font-size:15px;margin:0 0 8px">${a.isDesert === "yes"
+        ? `<b style="color:#c8322d">This neighbourhood is a food desert.</b>` : `<b>This neighbourhood is not a food desert.</b>`}</p>
+      <table style="width:100%;border-collapse:collapse">
+        <tr><td style="padding:4px 0">Test 1 · Low income?<br><span style="color:#5b6475">${a.povPct == null ? "No data" : fmt1(a.povPct) + "% live in poverty"} (rule: ${r.pov}% or more)</span></td><td style="text-align:right">${tick(lowInc)}</td></tr>
+        <tr><td style="padding:4px 0">Test 2 · Low access?<br><span style="color:#5b6475">Nearest supermarket ${fmtMi(a.distMi)} miles (rule: more than ${r.distMi})</span></td><td style="text-align:right">${tick(lowAcc)}</td></tr>
+      </table>
+      <p style="margin:8px 0 0;color:#5b6475">${fmt(a.pop)} people · ${a.novehPct == null ? "–" : fmt1(a.novehPct) + "%"} of households have no car</p>`;
+  };
   tractLayer = new FeatureLayer({
     title: "Census tracts", source: graphics, objectIdField: "OBJECTID", geometryType: "polygon",
     spatialReference: { wkid: 4326 }, elevationInfo: { mode: "on-the-ground" },
@@ -439,20 +464,13 @@ function buildTractLayer() {
       { name: "pop", type: "integer", alias: "People (poverty universe)" }, { name: "poor", type: "integer", alias: "People below poverty" },
       { name: "povPct", type: "double", alias: "Poverty rate (%)" }, { name: "hh", type: "integer", alias: "Households" },
       { name: "noveh", type: "integer", alias: "Households without a vehicle" }, { name: "novehPct", type: "double", alias: "Households without a vehicle (%)" },
-      { name: "distMi", type: "double", alias: "Miles to nearest full-service store" }, { name: "status", type: "string" }
+      { name: "distMi", type: "double", alias: "Miles to nearest full-service store" }, { name: "status", type: "string" },
+      { name: "isDesert", type: "string" }
     ],
     renderer: tractRenderer(),
     visible: $("lyrTracts").checked,
-    popupTemplate: {
-      title: "{NAME}",
-      content: [{ type: "fields", fieldInfos: [
-        { fieldName: "pop", label: "People (for whom poverty is measured)", format: { digitSeparator: true, places: 0 } },
-        { fieldName: "povPct", label: "Poverty rate (%)", format: { places: 1 } },
-        { fieldName: "noveh", label: "Households without a vehicle", format: { digitSeparator: true, places: 0 } },
-        { fieldName: "novehPct", label: "Households without a vehicle (%)", format: { places: 1 } },
-        { fieldName: "distMi", label: "Miles from tract centre to nearest full-service store", format: { places: 2 } }
-      ] }]
-    }
+    outFields: ["*"],
+    popupTemplate: { title: "{NAME}", outFields: ["*"], content: tractPopup }
   });
   map.add(tractLayer, 0);
 }
@@ -528,31 +546,29 @@ function drawSites() {
 function renderLegend() {
   const L = $("legend");
   if (state.colourBy === "status") {
-    L.innerHTML = [
-      ["desert", "Food desert: low income + low access"], ["access", "Low access only"],
-      ["income", "Low income only"], ["ok", "Neither"]
-    ].map(([k, t]) => `<div><span class="sw" style="background:${STATUS_COLOURS[k]}"></span>${t}</div>`).join("");
+    L.innerHTML = `<div><span class="sw" style="background:${STATUS_COLOURS.desert}"></span>Food desert (fails both tests)</div>
+      <div><span class="sw" style="background:transparent;border:1.5px solid #9aa3b2"></span>Not a food desert</div>`;
   } else {
     const r = tractRenderer();
     L.innerHTML = r.classBreakInfos.map((c) => `<div><span class="sw" style="background:rgba(${c.symbol.color.slice(0, 3).join(",")},.8)"></span>${c.label}</div>`).join("");
   }
   L.innerHTML += `<hr style="border:0;border-top:1px solid var(--line)">
-    <div><span class="dot" style="background:#1a8f4a"></span>Full-service store</div>
-    <div><span class="dot" style="background:#6fbf73"></span>Grocery store</div>
-    <div><span class="dot" style="background:#8a8f98"></span>Convenience / other SNAP store</div>
-    <div><span class="sw" style="background:#2a6fdb;border-radius:0"></span>Transit stop / route</div>`;
+    <div><span class="dot" style="background:#1a8f4a"></span>Supermarket</div>
+    <div><span class="dot" style="background:#6fbf73"></span>Small grocery store</div>
+    <div><span class="dot" style="background:#8a8f98"></span>Convenience store or other shop</div>
+    <div><span class="sw" style="background:#2a6fdb;border-radius:0"></span>Bus or rail stop / route</div>`;
 }
 
 function renderSummary() {
   const T = state.tracts, D = T.filter((t) => t.status === "desert");
   const full = state.stores.filter((s) => isFullService(s.type) && haversine(state.centre.lon, state.centre.lat, s.x, s.y) <= RADIUS_M).length;
   const sum = (a, k) => a.reduce((s, t) => s + (t[k] || 0), 0);
-  $("summary").innerHTML = `<div class="card"><div class="stats">
-    <div class="stat"><b>${fmt(T.length)}</b><span>census tracts within ${fmt1(RADIUS_M / MILE)} miles</span></div>
-    <div class="stat"><b>${fmt(full)}</b><span>full-service stores in the area</span></div>
-    <div class="stat"><b style="color:var(--desert)">${fmt(D.length)}</b><span>food desert tracts (your rules)</span></div>
-    <div class="stat"><b>${fmt(sum(D, "pop"))}</b><span>people living in them</span></div>
-  </div>${D.length === 0 ? `<p class="warn small" style="margin:8px 0 0">No tracts meet both rules here. Try relaxing the rules, or pick another community.</p>` : ""}</div>`;
+  const place = state.centre.label.split(",")[0];  // e.g. "South Dallas" or "the area on screen"
+  $("summary").innerHTML = D.length
+    ? `<div class="card"><p class="headline">In ${place}, <b class="big">${fmt(D.length)}</b> of ${fmt(T.length)} neighbourhoods are food deserts.
+        <b>${fmt(sum(D, "pop"))}</b> people live in them.</p>
+        <p class="small muted" style="margin:6px 0 0">There ${full === 1 ? "is 1 supermarket" : `are ${fmt(full)} supermarkets`} in the whole ${fmt1(RADIUS_M / MILE)}-mile study area.</p></div>`
+    : `<div class="card warn"><p class="small" style="margin:0">No neighbourhoods here fail both tests. Try another community, or open “Change the rules”.</p></div>`;
 }
 
 function renderSites() {
@@ -589,15 +605,18 @@ function renderSites() {
 
 function flyTo(id) {
   const s = state.sites.find((x) => x.id === id);
-  view.goTo({ position: { longitude: s.x, latitude: s.y - 0.006, z: 450 }, tilt: 68, heading: 0 }, { duration: 1800 }).catch(() => {});
+  view.goTo({ center: [s.x, s.y], zoom: 17, tilt: 65, heading: 0 }, { duration: 1800 }).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
 // Workflow
 // ---------------------------------------------------------------------------
-async function analyse(lon, lat, label) {
-  document.querySelectorAll("button").forEach((b) => (b.disabled = true));
+async function analyse(lon, lat, label, fly = true) {
+  document.querySelectorAll("button, #community").forEach((b) => (b.disabled = true));
   state.centre = { lon, lat, label };
+  state.sites = [];
+  // Fly there straight away so the map responds even while data loads.
+  if (fly) view.goTo({ center: [lon, lat], zoom: 13, tilt: 50, heading: 0 }, { duration: 2000 }).catch(() => {});
   try {
     setStatus("Loading census tracts (ACS)…", true);
     state.tracts = await loadTracts(lon, lat);
@@ -608,13 +627,12 @@ async function analyse(lon, lat, label) {
     try { state.stops = await loadStops(lon, lat); } catch { state.stops = []; }
     recompute(true);
     buildStopLayer();
-    view.goTo({ position: { longitude: lon, latitude: lat - 0.075, z: 7500 }, tilt: 55, heading: 0 }, { duration: 2000 }).catch(() => {});
-    setStatus(`Loaded ${state.tracts.length} tracts, ${state.stores.length} stores, ${state.stops.length} transit stops.`);
+    setStatus(`Loaded ${state.tracts.length} neighbourhoods, ${state.stores.length} food stores, ${state.stops.length} bus and rail stops.`);
   } catch (err) {
     console.error(err);
     setStatus(`Could not load data: ${err.message}`, true);
   } finally {
-    document.querySelectorAll("button").forEach((b) => (b.disabled = false));
+    document.querySelectorAll("button, #community").forEach((b) => (b.disabled = false));
   }
 }
 
@@ -675,14 +693,20 @@ $("download").addEventListener("click", () => {
 // Controls
 const sel = $("community");
 sel.innerHTML = COMMUNITIES.map((c, i) => `<option value="${i}">${c.name}</option>`).join("");
-$("analyse").addEventListener("click", () => { const c = COMMUNITIES[sel.value]; analyse(c.lon, c.lat, c.name); });
+// Picking a community flies there and analyses it immediately: no extra button.
+sel.addEventListener("change", () => { const c = COMMUNITIES[sel.value]; analyse(c.lon, c.lat, c.name); });
 $("analyseHere").addEventListener("click", () => {
-  const c = view.center; analyse(c.longitude, c.latitude, "Custom area (map centre)");
+  const c = view.center; analyse(c.longitude, c.latitude, "the area on screen", false);
 });
+const setRuleText = () => {
+  document.querySelectorAll(".povRule").forEach((el) => (el.textContent = state.rules.pov));
+  document.querySelectorAll(".distRule").forEach((el) => (el.textContent = state.rules.distMi));
+};
 $("pov").addEventListener("input", (e) => { $("povVal").textContent = e.target.value; });
-$("dist").addEventListener("input", (e) => { $("distVal").textContent = Number(e.target.value).toFixed(2).replace(/0$/, ""); });
+$("dist").addEventListener("input", (e) => { $("distVal").textContent = String(Number(e.target.value)); });
 ["pov", "dist"].forEach((id) => $(id).addEventListener("change", () => {
   state.rules.pov = Number($("pov").value); state.rules.distMi = Number($("dist").value);
+  setRuleText();
   if (state.tracts.length) recompute(false);
 }));
 $("incGrocery").addEventListener("change", (e) => { state.rules.incGrocery = e.target.checked; if (state.tracts.length) recompute(false); });
@@ -696,7 +720,7 @@ $("basemap").addEventListener("change", (e) => (map.basemap = e.target.value));
 
 renderLegend();
 const first = COMMUNITIES[0];
-analyse(first.lon, first.lat, first.name);
+analyse(first.lon, first.lat, first.name, false);   // the scene already opens on the first community
 </script>
 </body>
 </html>
