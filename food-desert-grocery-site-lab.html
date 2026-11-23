@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   Food Deserts: Grocery Store Design Challenge
-  Version 0.9.11-lab (2026-11-23)  LAB COPY: try changes here before they go into food-desert-grocery-site.html
+  Version 0.9.12-lab (2026-11-23)  LAB COPY: try changes here before they go into food-desert-grocery-site.html
 
   Model versions (bump when a model's maths or data handling changes)
     Food desert test          1.0.0   poverty % and straight-line distance to nearest supermarket, per census tract
@@ -11,6 +11,8 @@
     Minimum plot rule         1.0.0   3 x store floor area
 
   Changelog
+  0.9.12 2026-11-23  Links to the printable one-page steps (food-desert-handout.html): splash screen and a Steps button
+                     in the panel header, both opening in a new tab. Released to production as 0.9.12.
   0.9.11 2026-11-23  (lab) Convenience and other shops shown as purple triangles (grey dots were lost against the buildings).
   0.9.10 2026-11-23  (lab) Splash card 2 wording: "served by your store".
   0.9.9  2026-11-23  (lab) Splash card 3 wording: "design and build your store in SketchUp".
@@ -51,7 +53,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-<meta name="version" content="0.9.11-lab" />
+<meta name="version" content="0.9.12-lab" />
 <title>Food Deserts: Grocery Store Design Challenge (Lab)</title>
 <!-- ArcGIS Maps SDK for JavaScript 5.1 (components + core, single entry point). No API key needed: all layers are public. -->
 <script type="module" src="https://js.arcgis.com/5.1/"></script>
@@ -76,6 +78,9 @@
   .headrow { display: flex; align-items: center; gap: 8px; } .headrow h1 { flex: 1; }
   .lab { font-size: 10.5px; font-weight: 700; background: #f28c28; color: #1d2433; border-radius: 6px; padding: 1px 6px; vertical-align: middle; }
   #panelToggle { padding: 4px 10px; font-size: 12.5px; flex: none; }
+  .linkbtn { flex: none; font-size: 12.5px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); text-decoration: none; background: #fff; }
+  .linkbtn:hover { background: var(--bg); }
+  .sp-meta a { color: var(--store); font-weight: 600; white-space: nowrap; }
   h1 .subtitle { display: block; font-size: 14px; font-weight: 600; color: var(--muted); margin-top: 2px; }
   .progress { list-style: none; display: flex; gap: 4px; padding: 0; margin: 10px 0 6px; }
   .progress li { flex: 1; }
@@ -229,7 +234,7 @@
     </ol>
     <div class="sp-foot">
       <button id="spStart" autofocus>Start the challenge →</button>
-      <p class="sp-meta">About 45 minutes · no sign-in · real data from the U.S. Census Bureau, USDA and U.S. Department of Transportation</p>
+      <p class="sp-meta">About 45 minutes · no sign-in · real data from the U.S. Census Bureau, USDA and U.S. Department of Transportation · <a href="food-desert-handout.html" target="_blank" rel="noopener" aria-label="Printable steps, one page, opens in a new tab">Printable steps (1 page)</a></p>
     </div>
     <p class="sp-credit"><span>Picture 1: this app's map (Esri World Imagery and Esri 3D Buildings). Pictures 2 and 3 are drawings.</span><span>Created by Jason Sawle</span></p>
   </div>
@@ -239,6 +244,7 @@
     <div id="panelHead">
       <div class="headrow">
         <h1>Food Deserts <span class="lab">LAB</span><span class="subtitle">Grocery Store Design Challenge</span></h1>
+        <a id="stepsLink" class="linkbtn" href="food-desert-handout.html" target="_blank" rel="noopener" aria-label="Printable steps, opens in a new tab">📄 Steps</a>
         <button id="panelToggle" class="ghost" aria-expanded="true" aria-controls="panelBody">Hide steps</button>
       </div>
       <ol id="progress" class="progress" aria-label="Your progress">
@@ -419,7 +425,7 @@
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
-const APP_VERSION = "0.9.11-lab";
+const APP_VERSION = "0.9.12-lab";
 const IS_CHROMEBOOK = /\bCrOS\b/.test(navigator.userAgent);   // Chromebooks get the Google Doc button first   // keep in step with the changelog at the top of this file
 const MODELS = {               // bump a model's version whenever its maths or data handling changes
   desertTest:   { name: "Food desert test",         v: "1.0.0", what: "Poverty rate and straight-line distance from each neighborhood's center to the nearest supermarket" },
