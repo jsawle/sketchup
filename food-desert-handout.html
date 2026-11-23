@@ -1,0 +1,90 @@
+<!doctype html>
+<!--
+  Food Deserts – Grocery Store Design Challenge: printable steps (one page)
+  Handout version 1.0.0 (2026-11-23), written for app version 0.9.12
+  Changelog
+  1.0.0  2026-11-23  First version, from the student handout drafted with the app's lab copy.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="version" content="1.0.0" />
+<title>Food Deserts – Grocery Store Design Challenge: the 4 steps</title>
+<style>
+  :root { --ink: #1d2433; --muted: #5b6475; --line: #dde2ea; --desert: #d7263d; --store: #0077b6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: #f6f7f9; line-height: 1.4; }
+  main { max-width: 820px; margin: 24px auto; background: #fff; padding: 32px 40px 24px; border-radius: 12px; box-shadow: 0 2px 14px rgba(0,0,0,.08); }
+  .bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 24px; margin: 0; line-height: 1.15; }
+  .lead { margin: 8px 0 14px; font-size: 14.5px; }
+  h2 { font-size: 16px; margin: 14px 0 4px; display: flex; align-items: baseline; gap: 8px; }
+  h2 .n { background: var(--ink); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 12.5px; flex: none; }
+  h2 .t { font-weight: 500; font-size: 13px; color: var(--muted); }
+  p, li { font-size: 13.5px; margin: 3px 0; }
+  ul { margin: 3px 0 3px; padding-left: 20px; }
+  .done { background: #f1faf4; border-left: 4px solid #1a8f4a; padding: 5px 10px; border-radius: 4px; margin-top: 6px; }
+  .tri { display: inline-block; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 10px solid #7b3fa0; vertical-align: -1px; }
+  button { font: inherit; font-size: 14px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--ink); background: var(--ink); color: #fff; cursor: pointer; }
+  button:focus-visible, a:focus-visible { outline: 3px solid #f28c28; outline-offset: 2px; }
+  footer { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
+  @page { size: letter; margin: 0.45in 0.6in; }
+  @media print {
+    body { background: #fff; }
+    main { margin: 0; padding: 0; box-shadow: none; max-width: none; }
+    .noprint { display: none !important; }
+    h1 { font-size: 20px; } .lead { font-size: 11pt; margin: 4px 0 8px; }
+    h2 { font-size: 12.5pt; margin: 8px 0 2px; } p, li { font-size: 11pt; margin: 1px 0; line-height: 1.3; }
+    .done { padding: 3px 8px; margin-top: 3px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    h2 .n, .tri { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    footer { margin-top: 6px; padding-top: 4px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="bar">
+    <h1>Food Deserts – Grocery Store Design Challenge: the 4 steps</h1>
+    <button class="noprint" onclick="window.print()">🖨 Print</button>
+  </div>
+  <p class="lead">Your job is to choose the best place for a new supermarket in a food desert, then design and build it in SketchUp. The app has four steps and takes about 45 minutes.</p>
+
+  <h2><span class="n" aria-hidden="true">1</span>Explore the map <span class="t">about 10 min</span></h2>
+  <p>Look for four things before you choose a spot:</p>
+  <ul>
+    <li><b>Food deserts:</b> the red areas. Press <b>Details</b> next to each one in the panel, or click a red area. See how many people live there and how far away the nearest supermarket is.</li>
+    <li><b>Stores that are already there:</b> large green dots are supermarkets, light green dots are small grocery stores, yellow dots are farmers markets and small purple triangles <span class="tri" aria-hidden="true"></span> are convenience stores. How far are the supermarkets from the red areas?</li>
+    <li><b>Buses and trains:</b> blue lines are bus and rail routes, and blue squares are stops. Zoom in to see them. Which routes run through or near the food desert?</li>
+    <li><b>Land to build on:</b> use the satellite view and the 3D buildings to find empty lots, big parking lots or unused land. Your store and its parking need about 2½ acres, roughly the size of two football fields.</li>
+  </ul>
+  <p>For street names, shops and schools, press <b>Street map</b> (top right of the map).</p>
+  <p class="done"><b>You're done when</b> you have chosen one food desert, found its nearest supermarket and at least one bus or rail route nearby, and spotted two or three lots where a store could go.</p>
+
+  <h2><span class="n" aria-hidden="true">2</span>Place your store <span class="t">about 15–20 min</span></h2>
+  <p>Press <b>Place my store</b>, then move the store over the lots you found in Step 1. Watch the numbers in the box on the map change.</p>
+  <ul>
+    <li>Try at least three spots: put the store down, then drag it somewhere else. If a spot you used earlier had more people, press <b>Go back</b>.</li>
+    <li>Put the store on open land or a parking lot, not on houses or roads.</li>
+    <li>Fit it to the land: drag the white dots to resize it and the orange circle to turn it, or use the buttons in the panel. Press <b>Done</b> when it fits.</li>
+  </ul>
+  <p class="done"><b>You're done when</b> your store sits on real open land, in or next to the food desert you chose, and lines up with the roads.</p>
+
+  <h2><span class="n" aria-hidden="true">3</span>Explain your choice <span class="t">about 10 min</span></h2>
+  <p>Explain your thinking in as much detail as you need, and add your name or team. Say:</p>
+  <ul>
+    <li>why you chose this spot</li>
+    <li>who the store would serve, using numbers from the box (<b>Add my numbers</b> puts them in for you)</li>
+    <li>how people without a car could get there</li>
+    <li>one problem with this site</li>
+  </ul>
+  <p class="done"><b>You're done when</b> your writing names the food desert, uses at least two numbers, mentions buses, trains or walking, and gives one problem.</p>
+
+  <h2><span class="n" aria-hidden="true">4</span>Create your site plan <span class="t">about 5 min</span></h2>
+  <p>Press <b>Show my store</b> (or move the map yourself): the map view becomes the picture in your plan. Then press <b>Google Doc</b> (best on a Chromebook) or <b>Word document</b>. Both save a Word file to your Downloads; Google Doc then shows how to open it in Google Docs.</p>
+  <p class="done"><b>You're done when</b> the file is in your Downloads. Next, design and build your store in SketchUp using the steps at the end of the plan.</p>
+
+  <footer><span>Handout version 1.0.0 · for app version 0.9.12</span><span>Created by Jason Sawle</span></footer>
+</main>
+</body>
+</html>
