@@ -1,0 +1,1656 @@
+<!doctype html>
+<!--
+  Grocery Store Site Challenge
+  Version 0.9.0-lab (2026-11-23)  LAB COPY: try changes here before they go into food-desert-grocery-site.html
+
+  Model versions (bump when a model's maths or data handling changes)
+    Food desert test          1.0.0   poverty % and straight-line distance to nearest supermarket, per census tract
+    Food desert areas         1.0.0   touching food desert tracts grouped (30 m edge tolerance)
+    People served             1.0.0   people spread evenly over each tract on a sample grid; counted within the distance rule
+    Transit stops near store  1.1.0   server-side count of stops within 400 m (1.0.0 downloaded all stops and counted locally)
+    Minimum plot rule         1.0.0   3 x store floor area
+
+  Changelog
+  0.9.0  2026-11-23  (lab) Floating panel over a full-screen map (bottom sheet on small screens), can be hidden.
+                     Progress bar (Explore, Place, Explain, Site plan, Hand in) that ticks itself off, with a "Next" line.
+                     New Step 5 Hand in. Google Doc first on Chromebooks. Map messages stay until the next action.
+                     Pop-ups use words (Yes/No) instead of coloured ticks. Details and Try-my-store-here for each food
+                     desert area in the panel. Keyboard: numbers follow the map centre while placing; edit mode ends only
+                     with Done or Esc; 100 ft steps. Plot check moved to an optional extra. Word count and Add my numbers
+                     in Step 3. Show my store button. SketchUp steps rewritten with typed sizes and a done checklist.
+  0.8.0  2026-11-23  Accessibility: keyboard and button controls to place, move, resize and turn the store; labelled form
+                     controls; screen-reader announcements for the store numbers and status; named map, Go buttons and
+                     legend toggle; focus moves into the Google Doc dialog; stronger contrast on version tags.
+                     US spelling and wording; store sizes in feet first (snaps to 10 ft, height 30 ft), SketchUp steps in feet.
+                     Teacher note now matches USDA's low-income test (poverty part only is used here); "About" notes the
+                     low-income/low-access term and the census population used. "mile/miles" fix. "Created by" credit.
+  0.7.0  2026-09-24  Faster loading: bus/rail stops no longer downloaded (map layer streams from the service; stop count near the
+                     store is one server query), census and store data fetched in parallel, cities cached. Model version tags.
+  0.6.0  2026-09-24  Store moved, resized and turned directly on the map (drag body, side dots, turn handle); panel sliders removed.
+  0.5.0  2026-09-24  Student output as Word (.docx) or Google Doc (via Drive upload); one screenshot instead of three.
+  0.4.0  2026-09-24  Reworked flow: explore numbered food desert areas, place one 3D store with live "people served" feedback,
+                     justify, create site plan for SketchUp. Site A/B/C comparison removed. Eight cities.
+  0.3.0  2026-09-24  On-map legend, plot measuring with minimum size, store rotate/resize (sliders).
+  0.2.0  2026-09-24  Imagery + 3D buildings by default, choosing a city flies there, simpler two-test food desert step.
+  0.1.0  2026-09-23  First build: ACS tracts, SNAP stores, transit, Esri 3D Buildings, three candidate sites.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+<meta name="version" content="0.9.0-lab" />
+<title>Grocery Store Site Challenge (Lab)</title>
+<!-- ArcGIS Maps SDK for JavaScript 5.1 (components + core, single entry point). No API key needed: all layers are public. -->
+<script type="module" src="https://js.arcgis.com/5.1/"></script>
+<style>
+  :root {
+    --ink: #1d2433; --muted: #5b6475; --line: #dde2ea; --bg: #f6f7f9; --panel: #ffffff;
+    --desert: #d7263d; --store: #0077b6; --ring: #00d1ff; --plot: #ffd21f; --ok: #1a8f4a; --transit: #2a6fdb;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg); }
+  /* Floating panel over a full-screen map. --pw / --ph = space the panel takes on the left / bottom (set from JS). */
+  :root { --pw: 404px; --ph: 0px; }
+  #app { position: relative; height: 100%; }
+  #mapwrap { position: absolute; inset: 0; }
+  #panel { position: absolute; z-index: 8; top: 12px; left: 12px; bottom: 12px; width: 380px; display: flex; flex-direction: column;
+    background: var(--panel); border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,.28); overflow: hidden; overflow: clip; }
+  #panelHead { padding: 12px 16px 10px; border-bottom: 1px solid var(--line); flex: none; }
+  #panelBody { position: relative; overflow-y: auto; padding: 4px 16px 28px; flex: 1; overscroll-behavior: contain; }
+  #panel.collapsed { bottom: auto; width: auto; max-width: 320px; }
+  #panel.collapsed #panelBody, #panel.collapsed #progress, #panel.collapsed #nextLine { display: none; }
+  #panel.collapsed #panelHead { border-bottom: 0; }
+  .headrow { display: flex; align-items: center; gap: 8px; } .headrow h1 { flex: 1; }
+  .lab { font-size: 10.5px; font-weight: 700; background: #f28c28; color: #1d2433; border-radius: 6px; padding: 1px 6px; vertical-align: middle; }
+  #panelToggle { padding: 4px 10px; font-size: 12.5px; flex: none; }
+  .progress { list-style: none; display: flex; gap: 4px; padding: 0; margin: 10px 0 6px; }
+  .progress li { flex: 1; }
+  .progress button { width: 100%; padding: 5px 2px; font-size: 11.5px; line-height: 1.2; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; }
+  .progress button .pn { display: block; font-weight: 700; font-size: 12.5px; }
+  .progress li.current button { border: 2px solid var(--ink); background: #fff; }
+  .progress li.done button { background: #e3f4ea; border-color: #1a8f4a; color: #0f5c2e; }
+  .next { margin: 0; font-size: 13px; background: #fff8d6; border: 1px solid #e3c95a; border-radius: 6px; padding: 6px 8px; }
+  .handin { border: 2px solid #1a8f4a; background: #f1faf4; }
+  .wordcount { font-size: 12px; margin: 4px 0 0; }
+  .adetail { font-size: 12.5px; background: var(--bg); border-radius: 6px; padding: 6px 8px; margin: 4px 0 2px; width: 100%; }
+  .deserts li { flex-wrap: wrap; }
+  arcgis-scene { width: 100%; height: 100%; display: block; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 22px 0 6px; display: flex; align-items: center; gap: 8px; }
+  h2 .step { background: var(--ink); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; flex: none; }
+  h2 .mins { margin-left: auto; font-size: 11.5px; font-weight: 500; color: var(--muted); background: var(--bg); border-radius: 10px; padding: 2px 8px; }
+  p, li, label, td, th { font-size: 13.5px; line-height: 1.45; }
+  .muted { color: var(--muted); } .small { font-size: 12px; }
+  select, button, input[type=text], textarea { font: inherit; font-size: 13.5px; }
+  select, input[type=text], textarea { width: 100%; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  textarea { min-height: 120px; resize: vertical; }
+  button { padding: 7px 12px; border-radius: 6px; border: 1px solid var(--ink); background: var(--ink); color: #fff; cursor: pointer; }
+  button.ghost { background: #fff; color: var(--ink); border-color: var(--line); }
+  button.big { width: 100%; padding: 10px; font-weight: 600; font-size: 14.5px; }
+  button.store { background: var(--store); border-color: var(--store); }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; align-items: center; } .row > * { flex: 1; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; background: #fff; }
+  .legend div { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin: 3px 0; }
+  .legend h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 8px 0 3px; }
+  .sw { width: 14px; height: 14px; border-radius: 3px; flex: none; border: 1px solid rgba(0,0,0,.15); }
+  .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+  .ring { width: 16px; height: 16px; border-radius: 50%; flex: none; }
+  .slider label, .adjust label { display: flex; justify-content: space-between; }
+  input[type=range] { width: 100%; }
+  .tests > div { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0; }
+  .tnum { background: var(--desert); color: #fff; border-radius: 50%; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex: none; margin-top: 2px; }
+  .headline { font-size: 15px; line-height: 1.4; margin: 0; }
+  .headline b.big { color: var(--desert); font-size: 20px; }
+  .deserts { list-style: none; padding: 0; margin: 6px 0 0; }
+  .deserts li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .deserts .num { background: var(--desert); color: #fff; font-weight: 700; border-radius: 4px; padding: 1px 7px; font-size: 12px; flex: none; }
+  .deserts .txt { flex: 1; font-size: 12.5px; }
+  .deserts button { padding: 4px 10px; font-size: 12.5px; }
+  details summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+  .warn { background: #fff4e5; border-left: 3px solid #f08c2e; padding: 8px 10px; border-radius: 4px; }
+  .ok { color: var(--ok); font-weight: 700; } .bad { color: var(--desert); font-weight: 700; }
+  .plotline { font-size: 12.5px; margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: var(--bg); }
+  .starters { font-size: 12px; color: var(--muted); margin: 4px 0 6px; padding-left: 18px; }
+  #status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(29,36,51,.92); color: #fff; padding: 7px 14px; border-radius: 20px; font-size: 13px; z-index: 6; max-width: 90%; text-align: center; pointer-events: none; transition: opacity .3s; }
+  #status.hide { opacity: 0; }
+  .hintbar { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: #fff8d6; border: 1px solid #e3c95a; padding: 8px 12px; border-radius: 8px; font-size: 13px; z-index: 6; display: none; width: min(480px, 92%); }
+  .hintbar .row > span { flex: 2; }
+  #feedback { position: absolute; top: 12px; left: 12px; z-index: 5; background: rgba(255,255,255,.97); border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.3); width: 270px; padding: 10px 12px; display: none; }
+  #feedback .bignum { font-size: 30px; font-weight: 800; color: var(--store); line-height: 1.1; }
+  #feedback ul { list-style: none; padding: 0; margin: 6px 0 0; }
+  #feedback li { font-size: 12.5px; display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; border-top: 1px solid var(--line); }
+  #feedback li b { font-variant-numeric: tabular-nums; }
+  #feedback .where { font-size: 12.5px; margin-top: 6px; padding: 5px 7px; border-radius: 6px; }
+  #feedback .where.in { background: #fde8eb; color: #9c1428; } #feedback .where.out { background: #fff4e5; color: #8a4b00; }
+  #maplegend { position: absolute; left: 12px; bottom: 24px; z-index: 5; background: rgba(255,255,255,.96); border-radius: 8px; box-shadow: 0 1px 6px rgba(0,0,0,.25); max-width: 250px; max-height: 55%; overflow-y: auto; }
+  .legend-head { width: 100%; text-align: left; background: none; color: var(--ink); border: 0; font-weight: 700; padding: 8px 12px; display: flex; justify-content: space-between; }
+  #maplegend .legend { padding: 0 12px 10px; }
+  #maplegend.collapsed .legend { display: none; }
+  .ver { font-size: 10.5px; font-weight: 500; color: #4f5868; background: #eef1f5; border-radius: 8px; padding: 1px 7px; white-space: nowrap; }
+  .vt { width: 100%; border-collapse: collapse; margin-top: 4px; } .vt td { font-size: 11.5px; padding: 3px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .howto { list-style: none; padding: 0; margin: 6px 0 0; }
+  .howto li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin: 4px 0; }
+  .hico { width: 18px; height: 18px; border-radius: 4px; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; }
+  .hico.dot { border-radius: 50%; background: #fff; border: 3px solid #0077b6; }
+  .hico.rot { border-radius: 50%; background: #f28c28; color: #fff; font-weight: 700; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 20; display: none; align-items: center; justify-content: center; padding: 16px; }
+  .modal.show { display: flex; }
+  .modal-box { background: #fff; border-radius: 10px; padding: 16px 18px; width: min(440px, 100%); box-shadow: 0 6px 30px rgba(0,0,0,.35); }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  :focus-visible { outline: 3px solid #f28c28; outline-offset: 2px; }
+  .kbd { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .kbd summary { font-weight: 600; }
+  .pad { display: grid; grid-template-columns: repeat(3, 40px); gap: 4px; justify-content: start; margin: 6px 0; }
+  .pad button { padding: 6px 0; font-size: 15px; line-height: 1; }
+  .numrow { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .numrow label { font-size: 12px; display: block; }
+  .numrow input { width: 100%; padding: 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 13.5px; }
+  #credit { position: absolute; right: 12px; bottom: 30px; z-index: 4; background: rgba(255,255,255,.92); color: var(--ink); font-size: 11.5px; padding: 3px 8px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+  /* Things on the map keep clear of the floating panel */
+  #feedback { left: calc(var(--pw) + 12px); }
+  #status { left: calc(50% + var(--pw) / 2); top: 12px; }
+  .hintbar { left: calc(50% + var(--pw) / 2); bottom: calc(var(--ph) + 28px); width: min(520px, calc(100% - var(--pw) - 24px)); }
+  #maplegend { left: auto; right: 12px; bottom: calc(var(--ph) + 62px); }
+  #credit { bottom: calc(var(--ph) + 30px); }
+  @media (max-width: 820px) {
+    /* Small screens: the panel becomes a sheet along the bottom */
+    #panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 50vh; border-radius: 14px 14px 0 0; }
+    #panel.collapsed { width: auto; max-width: none; bottom: 0; }
+    #feedback { width: 220px; left: 12px; } #feedback .bignum { font-size: 24px; }
+    #maplegend { max-width: 190px; top: 170px; bottom: auto; max-height: calc(100% - var(--ph) - 190px); }
+    #status { left: 50%; top: auto; bottom: calc(var(--ph) + 110px); }
+    .hintbar { left: 50%; width: 94%; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="panel" aria-label="Steps">
+    <div id="panelHead">
+      <div class="headrow">
+        <h1>Grocery Store Site Challenge <span class="lab">LAB</span></h1>
+        <button id="panelToggle" class="ghost" aria-expanded="true" aria-controls="panelBody">Hide steps</button>
+      </div>
+      <ol id="progress" class="progress" aria-label="Your progress">
+        <li data-p="1"><button data-goto="step1"><span class="pn">1</span><span class="pt">Explore</span></button></li>
+        <li data-p="2"><button data-goto="step2"><span class="pn">2</span><span class="pt">Place</span></button></li>
+        <li data-p="3"><button data-goto="step3"><span class="pn">3</span><span class="pt">Explain</span></button></li>
+        <li data-p="4"><button data-goto="step4"><span class="pn">4</span><span class="pt">Site plan</span></button></li>
+        <li data-p="5"><button data-goto="step5"><span class="pn">5</span><span class="pt">Hand in</span></button></li>
+      </ol>
+      <p id="nextLine" class="next" aria-live="polite"></p>
+    </div>
+    <div id="panelBody">
+    <p class="muted">Some neighborhoods have no supermarket nearby. They are called <b>food deserts</b>. Your job: find the best place to build a new supermarket, then design it in SketchUp.</p>
+
+    <!-- STEP 1 -->
+    <h2 id="step1" tabindex="-1"><span class="step" aria-hidden="true">1</span><span class="sr-only">Step 1: </span>Explore the food deserts <span class="mins">about 10 min</span></h2>
+    <label class="small" for="community">Choose a city</label>
+    <select id="community"></select>
+    <button id="analyseHere" class="ghost" style="width:100%;margin-top:6px" title="Find food deserts in the part of the map you are looking at now">Find food deserts in the area on the map</button>
+    <div class="card tests small" style="margin-top:10px">
+      <p class="small" style="margin:0 0 4px">A neighborhood is a food desert when <b>both</b> are true:</p>
+      <div><span class="tnum" aria-hidden="true">1</span><span>At least <b class="povRule">20</b>% of people live in poverty.</span></div>
+      <div><span class="tnum" aria-hidden="true">2</span><span>The nearest supermarket is more than <b class="distRule">1 mile</b> away.</span></div>
+      <div style="justify-content:flex-end" id="verDesertTest"></div>
+    </div>
+    <div id="summary"></div>
+    <p class="small" style="margin:8px 0 0"><b>Your job:</b> look at each food desert. Press <b>Details</b>, or click a red area on the map. Choose the one you want to help.</p>
+    <ul id="desertList" class="deserts" aria-label="Food desert areas"></ul>
+
+    <!-- STEP 2 -->
+    <h2 id="step2" tabindex="-1"><span class="step" aria-hidden="true">2</span><span class="sr-only">Step 2: </span>Place your store <span class="mins">about 15–20 min</span></h2>
+    <button id="placeBtn" class="big store">🏪 Place my store</button>
+    <p class="small muted" style="margin:6px 0 0">The store follows the mouse. Watch the numbers in the box on the map change. Click to put it down. Look for empty land or parking lots, not houses.</p>
+    <div id="storeCard" class="card" style="display:none">
+      <b>Fit it to the site</b>
+      <p class="small" style="margin:2px 0 0">Drag on the map, or use the controls below. Press <b>Done</b> on the map when you have finished.</p>
+      <ul class="howto">
+        <li><span class="hico" style="background:#0077b6" aria-hidden="true"></span><span><b>Drag the store</b> to move it.</span></li>
+        <li><span class="hico dot" aria-hidden="true"></span><span><b>Drag a white dot</b> to make that side longer or shorter.</span></li>
+        <li><span class="hico rot" aria-hidden="true">⟳</span><span><b>Drag the orange circle</b> to turn it to line up with the roads.</span></li>
+      </ul>
+      <p class="small" style="margin:6px 0 0" id="sizeLine"></p>
+      <div class="kbd" role="group" aria-labelledby="kbdTitle">
+        <p class="small" style="margin:0" id="kbdTitle"><b>Controls</b> (they work with a keyboard too)</p>
+        <div class="row" style="align-items:flex-start">
+          <div style="flex:none">
+            <span class="small" id="moveLabel">Move 10 ft</span>
+            <div class="pad">
+              <span></span><button class="ghost" data-move="0,1" aria-label="Move store north">↑</button><span></span>
+              <button class="ghost" data-move="-1,0" aria-label="Move store west">←</button><span></span><button class="ghost" data-move="1,0" aria-label="Move store east">→</button>
+              <span></span><button class="ghost" data-move="0,-1" aria-label="Move store south">↓</button><span></span>
+            </div>
+            <label class="small"><input type="checkbox" id="bigSteps" /> Big steps (100 ft)</label>
+          </div>
+          <div class="numrow" style="flex:1">
+            <div><label for="inLength">Length (ft)</label><input id="inLength" type="number" step="10" inputmode="numeric" /></div>
+            <div><label for="inWidth">Width (ft)</label><input id="inWidth" type="number" step="10" inputmode="numeric" /></div>
+            <div><label for="inRot">Turn (°)</label><input id="inRot" type="number" step="5" min="0" max="179" inputmode="numeric" /></div>
+          </div>
+        </div>
+      </div>
+      <button id="resetSize" class="ghost" style="margin-top:6px">Reset size and turn</button>
+      <details id="plotExtra" style="margin-top:8px">
+        <summary>Extra challenge: is there enough land? (optional)</summary>
+        <div id="plotLine"></div>
+      </details>
+    </div>
+
+    <!-- STEP 3 -->
+    <h2 id="step3" tabindex="-1"><span class="step" aria-hidden="true">3</span><span class="sr-only">Step 3: </span>Explain your choice <span class="mins">about 10 min</span></h2>
+    <p class="small" style="margin:0" id="whyHelp">Write 3–5 sentences (about 30–60 words). Use numbers from the box on the map. You could start with:</p>
+    <ul class="starters">
+      <li>We chose this location because…</li>
+      <li>A store here would serve ___ people, including ___ households without a car.</li>
+      <li>This site is better than other places we tried because…</li>
+      <li>One problem with this site is…</li>
+    </ul>
+    <label class="small" for="why" style="display:block">Why we chose this location</label>
+    <textarea id="why" aria-describedby="whyHelp wordCount" placeholder="We chose this location because…"></textarea>
+    <div class="row" style="margin-top:4px">
+      <p id="wordCount" class="wordcount muted" style="flex:2">0 words</p>
+      <button id="addNumbers" class="ghost" style="flex:none" disabled>Add my numbers</button>
+    </div>
+    <label class="small" for="team" style="margin-top:6px;display:block">Your name or team</label>
+    <input id="team" type="text" autocomplete="off" />
+
+    <!-- STEP 4 -->
+    <h2 id="step4" tabindex="-1"><span class="step" aria-hidden="true">4</span><span class="sr-only">Step 4: </span>Create your site plan <span class="mins">about 5 min</span></h2>
+    <p class="small" style="margin:0 0 6px">The map view becomes the picture in your document. Move the map yourself, or press <b>Show my store</b>.</p>
+    <button id="frameBtn" class="ghost" style="width:100%;margin-bottom:6px">🎯 Show my store</button>
+    <div class="row" id="docBtns">
+      <button id="wordBtn" class="big" style="background:#2b579a;border-color:#2b579a">📄 Word document</button>
+      <button id="gdocBtn" class="big" style="background:#1a73e8;border-color:#1a73e8">📝 Google Doc</button>
+    </div>
+    <p class="small muted" style="margin:6px 0 0" id="docNote">Your site plan has your picture, numbers, reasons and the store size, ready for building it in <b>SketchUp</b>. It is made on this device. Nothing is sent anywhere.</p>
+
+    <!-- STEP 5 -->
+    <h2 id="step5" tabindex="-1"><span class="step" aria-hidden="true">5</span><span class="sr-only">Step 5: </span>Hand in your site plan</h2>
+    <div class="card" id="handinCard">
+      <p class="small" style="margin:0" id="handinText">When you have made your site plan, hand in the file the way your teacher asks. Then build your store in SketchUp, using the steps at the end of the document.</p>
+      <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="handedIn" /> I have handed in my site plan</label>
+    </div>
+
+    <!-- EXTRAS -->
+    <details class="card" style="margin-top:18px">
+      <summary>Change the rules (teachers)</summary>
+      <div class="slider" style="margin-top:8px">
+        <label for="pov">Low income: poverty at least <b><span id="povVal">20</span>%</b></label>
+        <input id="pov" type="range" min="10" max="40" step="1" value="20" />
+        <label for="dist">Low access: more than <b><span id="distVal">1 mile</span></b></label>
+        <input id="dist" type="range" min="0.5" max="3" step="0.25" value="1" />
+        <label style="justify-content:flex-start;gap:6px"><input id="incGrocery" type="checkbox" /> Count small grocery stores as supermarkets</label>
+        <p class="small muted" style="margin:6px 0 0">USDA counts a census tract as low income if its poverty rate is 20% or more, <i>or</i> its median family income is 80% or less of the area median. This app uses the poverty part only. USDA's usual low-access distance for cities is 1 mile. The distance rule is also how far your store reaches.</p>
+      </div>
+    </details>
+    <details class="card">
+      <summary>More map options</summary>
+      <div style="margin-top:6px">
+        <label class="small" for="colourBy">Color neighborhoods by</label>
+        <select id="colourBy">
+          <option value="status">Food desert or not</option>
+          <option value="pov">Poverty rate (%)</option>
+          <option value="noveh">Households without a car (%)</option>
+          <option value="dist">Distance to nearest supermarket (miles)</option>
+        </select>
+        <p class="small" style="margin:10px 0 2px" id="showOnMap"><b>Show on map</b></p>
+        <div role="group" aria-labelledby="showOnMap">
+        <label><input type="checkbox" id="lyrTracts" checked /> Neighborhoods</label><br />
+        <label><input type="checkbox" id="lyrStores" checked /> Food stores</label><br />
+        <label><input type="checkbox" id="lyrStops" checked /> Bus and rail stops</label><br />
+        <label><input type="checkbox" id="lyrRoutes" checked /> Bus and rail routes</label><br />
+        <label><input type="checkbox" id="lyrBuildings" checked /> 3D buildings</label><br />
+        </div>
+        <label class="small" for="basemap" style="display:block;margin-top:6px">Basemap</label>
+        <select id="basemap">
+          <option value="hybrid">Imagery with labels</option>
+          <option value="satellite">Imagery</option>
+          <option value="gray-vector">Light gray</option>
+          <option value="topo-vector">Topographic</option>
+        </select>
+      </div>
+    </details>
+    <details class="card">
+      <summary>About the data and method</summary>
+      <div class="small" style="margin-top:6px">
+        <p><b>Neighborhoods:</b> census tracts from the U.S. Census Bureau American Community Survey 5-year estimates, via ArcGIS Living Atlas (tables B17020 poverty and B08201 vehicles available). Estimates have margins of error.</p>
+        <p><b>People</b> counts use the census population whose poverty status is known. This leaves out people living in group quarters such as college dorms and nursing homes, so totals are a little low.</p>
+        <p><b>Food stores:</b> USDA SNAP authorized retailers. “Supermarket” means SNAP store type Supermarket or Super Store.</p>
+        <p><b>Transit:</b> U.S. DOT Bureau of Transportation Statistics National Transit Map. <b>3D buildings:</b> Esri 3D Buildings, ArcGIS Living Atlas.</p>
+        <p><b>Food desert</b> is the everyday name. USDA now calls these areas low-income and low-access (LILA) census tracts.</p>
+        <p><b>Food desert areas</b> are groups of touching food desert neighborhoods.</p>
+        <p><b>People served</b> assumes people are spread evenly across each neighborhood. A person counts if they live within the distance rule (1 mile) of your store and are currently more than that distance from any supermarket. Distances are straight-line, not walking routes.</p>
+        <p><b>Minimum plot size</b> is a rule of thumb: 3 × the store floor area, to leave room for parking and deliveries.</p>
+        <p>USDA’s official Food Access Research Atlas uses finer grids and more income measures. Results here are for learning, not official designations.</p>
+        <p style="margin-bottom:2px"><b>Versions</b></p>
+        <table class="vt" id="versionTable"><caption class="sr-only">App and model versions</caption></table>
+      </div>
+    </details>
+    <p class="small muted" style="margin:14px 0 0;text-align:center">Version <span id="appVersion"></span></p>
+    </div>
+  </aside>
+
+  <div id="mapwrap" role="region" aria-label="3D map of food deserts, food stores and your store">
+    <arcgis-scene id="scene" basemap="hybrid" ground="world-elevation"
+      camera-position="-96.752, 32.715, 5000" camera-tilt="55" camera-heading="0">
+      <arcgis-zoom slot="top-right"></arcgis-zoom>
+      <arcgis-navigation-toggle slot="top-right"></arcgis-navigation-toggle>
+      <arcgis-compass slot="top-right"></arcgis-compass>
+    </arcgis-scene>
+    <div id="status" role="status" aria-live="polite">Loading map…</div>
+    <div id="announce" class="sr-only" aria-live="polite"></div>
+    <div id="feedback" role="region" aria-label="Your store numbers"></div>
+    <div id="edithint" class="hintbar">
+      <div class="row"><span><b>Drag</b> the store to move · <b>drag a white dot</b> to resize · <b>drag ⟳</b> to turn, or use the controls in the panel. Press <b>Done</b> when finished. <span id="editSize" class="small"></span></span>
+        <button id="editDone" style="flex:none;background:#0077b6;border-color:#0077b6">Done</button></div>
+    </div>
+    <div id="carryhint" class="hintbar">
+      <div class="row"><span><b>Move the mouse</b> (or drag with a finger) to try places. <b>Click</b> to put the store down.<br><span class="small">Keyboard: move the map with the arrow keys, then press <b>Put it in the middle</b>.</span></span>
+        <button id="carryCentre" style="flex:none;background:#0077b6;border-color:#0077b6">Put it in the middle of the map</button>
+        <button id="carryCancel" class="ghost" style="flex:none">Cancel</button></div>
+    </div>
+    <div id="measurehint" class="hintbar">
+      <div><b>Measure your plot</b>: click each corner of the land. Double-click (or press Finish) on the last corner.</div>
+      <div class="row" style="margin-top:6px"><span id="measureLive" class="small" aria-live="polite"></span>
+        <button id="measureUndo" class="ghost">Undo</button><button id="measureFinish">Finish</button><button id="measureCancel" class="ghost">Cancel</button></div>
+    </div>
+    <div id="gdocModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="gdocTitle">
+      <div class="modal-box">
+        <h3 id="gdocTitle" style="margin:0 0 8px">Turn it into a Google Doc</h3>
+        <p class="small" style="margin:0 0 8px">✔ Your site plan has been saved to your <b>Downloads</b> as <b id="gdocFile"></b>.</p>
+        <ol class="small" style="padding-left:18px;margin:0 0 10px">
+          <li>Press <b>Open Google Drive</b> below.</li>
+          <li>Drag the file into Drive, or click <b>New → File upload</b> and choose it.</li>
+          <li>Double-click the file in Drive, then choose <b>Open with → Google Docs</b>.</li>
+        </ol>
+        <div class="row"><button id="gdocOpen" style="background:#1a73e8;border-color:#1a73e8">Open Google Drive</button><button id="gdocClose" class="ghost">Close</button></div>
+      </div>
+    </div>
+    <div id="maplegend">
+      <button id="legendToggle" class="legend-head" aria-expanded="true" aria-controls="legend">Legend <span id="legendArrow" aria-hidden="true">▾</span></button>
+      <div id="legend" class="legend"></div>
+    </div>
+    <div id="credit">Created by Jason Sawle</div>
+  </div>
+</div>
+
+<script type="module">
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+const APP_VERSION = "0.9.0-lab";
+const IS_CHROMEBOOK = /\bCrOS\b/.test(navigator.userAgent);   // Chromebooks get the Google Doc button first   // keep in step with the changelog at the top of this file
+const MODELS = {               // bump a model's version whenever its maths or data handling changes
+  desertTest:   { name: "Food desert test",         v: "1.0.0", what: "Poverty rate and straight-line distance from each neighborhood's center to the nearest supermarket" },
+  desertAreas:  { name: "Food desert areas",        v: "1.0.0", what: "Touching food desert neighborhoods grouped into numbered areas" },
+  peopleServed: { name: "People served",            v: "1.0.0", what: "People spread evenly across each neighborhood; counted if within the distance rule of the store and not already near a supermarket" },
+  transit:      { name: "Transit stops near store", v: "1.1.0", what: "Bus and rail stops within ¼ mile, counted on the U.S. DOT service" },
+  plotRule:     { name: "Minimum plot rule",        v: "1.0.0", what: "Plot must be at least 3 × the store floor area" }
+};
+const verTag = (k) => `<span class="ver" title="${MODELS[k].name} model">${MODELS[k].name} v${MODELS[k].v}</span>`;
+console.info(`Grocery Store Site Challenge v${APP_VERSION}`);
+const COMMUNITIES = [
+  { name: "Dallas, Texas (South Dallas)", lon: -96.752, lat: 32.765 },
+  { name: "Baltimore, Maryland (West Baltimore)", lon: -76.643, lat: 39.300 },
+  { name: "Memphis, Tennessee (South Memphis)", lon: -90.040, lat: 35.100 },
+  { name: "Washington, D.C. (Southeast)", lon: -76.985, lat: 38.862 },
+  { name: "Chicago, Illinois (Englewood)", lon: -87.645, lat: 41.779 },
+  { name: "Detroit, Michigan (East Side)", lon: -83.000, lat: 42.385 },
+  { name: "St. Louis, Missouri (North St. Louis)", lon: -90.235, lat: 38.670 },
+  { name: "Atlanta, Georgia (Southwest Atlanta)", lon: -84.450, lat: 33.715 }
+];
+const RADIUS_M = 5000;           // study area around the city centre point
+const STORE_BUFFER_M = 3000;     // also load supermarkets this far beyond the study area
+const MAX_SEARCH_M = RADIUS_M + STORE_BUFFER_M;
+const MILE = 1609.344;
+const WALK_M = 400;              // quarter mile, for bus/rail stops near the store
+const FT = 0.3048;               // metres per foot: sizes are shown in feet, worked out in metres
+const STORE_HEIGHT_M = 30 * FT;   // fixed: one-story supermarket, 30 ft
+const M_PER_DEG = 6371008.8 * Math.PI / 180;
+const SQFT = 10.7639, ACRE = 4046.856;
+
+const URLS = {
+  vehicles: "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/ACS_Vehicle_Availability_Boundaries/FeatureServer/2",
+  poverty:  "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/ACS_Poverty_by_Age_Boundaries/FeatureServer/2",
+  snap:     "https://services1.arcgis.com/RLQu0rK7h4kbsBq5/arcgis/rest/services/snap_retailer_location_data/FeatureServer/0",
+  stops:    "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_National_Transit_Map_Stops/FeatureServer/0",
+  routes:   "https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_National_Transit_Map_Routes/FeatureServer/0",
+  buildings:"https://basemaps3d.arcgis.com/arcgis/rest/services/Esri3D_Buildings_v1/SceneServer"
+};
+const C = { desert: "#d7263d", store: "#0077b6", ring: "#00d1ff", plot: "#ffd21f" };
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+const state = {
+  centre: null, tracts: [], stores: [], deserts: [], samples: null, stopCount: { key: "", n: null }, cache: {},
+  store: { placed: false, x: 0, y: 0, length: 70, width: 45, rot: 0 },
+  best: null, carrying: false, carryFrom: null, plot: null, measure: null,
+  rules: { pov: 20, distMi: 1, incGrocery: false }, colourBy: "status",
+  explored: false, docMade: null, handedIn: false
+};
+
+const $ = (id) => document.getElementById(id);
+// Map messages stay until the student's next action (a click, tap or key press), so slow readers don't miss them.
+// "persist" messages (loading, errors) stay until another message replaces them.
+function setStatus(msg, persist) {
+  const el = $("status"); if (!el) return;
+  el.textContent = msg; el.classList.remove("hide");
+  setStatus._shown = Date.now(); setStatus._sticky = !!persist;
+}
+setStatus._sticky = true;   // "Loading map…" from the page
+function hideStatusOnAction() {
+  if (setStatus._sticky || Date.now() - (setStatus._shown || 0) < 2500) return;
+  $("status").classList.add("hide");
+}
+document.addEventListener("pointerdown", hideStatusOnAction, true);
+document.addEventListener("keydown", hideStatusOnAction, true);
+
+// ---- Progress: which steps are done, and what to do next ----
+const wordsIn = (s) => (s.trim().match(/\S+/g) || []).length;
+const WORDS_DONE = 30;
+function stepsDone() {
+  return { 1: state.explored, 2: state.store.placed, 3: wordsIn($("why").value) >= WORDS_DONE, 4: !!state.docMade, 5: state.handedIn };
+}
+function nextText() {
+  const d = stepsDone();
+  if (!state.tracts.length) return "Wait for the map to load.";
+  if (!d[1]) return "Next: press Details on a food desert, or click a red area on the map.";
+  if (state.carrying) return "Next: move the store around and watch the numbers. Click to put it down.";
+  if (!d[2]) return "Next: choose the food desert you want to help, then press Place my store (Step 2).";
+  if (state.editing) return "Next: fit the store to the land, then press Done on the map.";
+  if (!d[3]) return `Next: write why you chose this spot (Step 3). You have ${wordsIn($("why").value)} of about ${WORDS_DONE} words.`;
+  if (!d[4]) return "Next: make your site plan (Step 4).";
+  if (!d[5]) return "Next: hand in your site plan file, then tick the box in Step 5.";
+  return "All done! Now build your store in SketchUp, using the steps in your document.";
+}
+function updateProgress() {
+  const d = stepsDone(); let current = 0;
+  for (let i = 1; i <= 5; i++) if (!d[i]) { current = i; break; }
+  document.querySelectorAll("#progress li").forEach((li) => {
+    const i = +li.dataset.p, btn = li.querySelector("button");
+    li.classList.toggle("done", !!d[i]); li.classList.toggle("current", i === current);
+    btn.querySelector(".pn").textContent = d[i] ? "✔" : String(i);
+    btn.setAttribute("aria-label", `Step ${i}, ${btn.querySelector(".pt").textContent}${d[i] ? ", done" : i === current ? ", you are here" : ""}`);
+    if (i === current) btn.setAttribute("aria-current", "step"); else btn.removeAttribute("aria-current");
+  });
+  const t = nextText(); if ($("nextLine").textContent !== t) $("nextLine").textContent = t;
+  $("addNumbers").disabled = !state.store.placed;
+}
+function markExplored() { if (!state.explored) { state.explored = true; updateProgress(); } }
+const fmt = (n) => (n == null || isNaN(n)) ? "–" : Math.round(n).toLocaleString("en-US");
+const fmt1 = (n) => (n == null || isNaN(n)) ? "–" : (Math.round(n * 10) / 10).toFixed(1);
+const fmtMi = (mi) => mi >= MAX_SEARCH_M / MILE - 0.05 ? `${fmt1(MAX_SEARCH_M / MILE)}+` : fmt1(mi);
+const fmtArea = (m2) => `${fmt(m2 * SQFT)} sq ft (${(m2 / ACRE).toFixed(2)} acres)`;
+const ft = (m) => Math.round(m / FT);   // metres to whole feet, for display
+const miWord = (n) => `${n} mile${n === 1 ? "" : "s"}`;
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// ---------------------------------------------------------------------------
+// Geometry helpers (plain maths, no geometry engine needed)
+// ---------------------------------------------------------------------------
+function haversine(lon1, lat1, lon2, lat2) {
+  const R = 6371008.8, r = Math.PI / 180;
+  const dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+function circleRing(lon, lat, radiusM, n = 90) {
+  const R = 6371008.8, r = Math.PI / 180, d = radiusM / R, ring = [];
+  for (let i = 0; i <= n; i++) {
+    const brg = (i / n) * 2 * Math.PI;
+    const lat2 = Math.asin(Math.sin(lat * r) * Math.cos(d) + Math.cos(lat * r) * Math.sin(d) * Math.cos(brg));
+    const lon2 = lon * r + Math.atan2(Math.sin(brg) * Math.sin(d) * Math.cos(lat * r), Math.cos(d) - Math.sin(lat * r) * Math.sin(lat2));
+    ring.push([lon2 / r, lat2 / r]);
+  }
+  return ring;
+}
+// Store footprint: length runs east–west and width north–south before turning; rotDeg turns it clockwise.
+function rectRing(lon, lat, lengthM, widthM, rotDeg = 0) {
+  const t = rotDeg * Math.PI / 180, c = Math.cos(t), s = Math.sin(t);
+  const mLon = M_PER_DEG * Math.cos(lat * Math.PI / 180);
+  const pts = [[-lengthM / 2, -widthM / 2], [-lengthM / 2, widthM / 2], [lengthM / 2, widthM / 2], [lengthM / 2, -widthM / 2]]
+    .map(([x, y]) => [lon + (x * c + y * s) / mLon, lat + (-x * s + y * c) / M_PER_DEG]);
+  return [...pts, pts[0]];
+}
+function ringAreaM2(ring) {
+  if (ring.length < 3) return 0;
+  const lat0 = ring.reduce((s, p) => s + p[1], 0) / ring.length;
+  const mLon = M_PER_DEG * Math.cos(lat0 * Math.PI / 180);
+  let a = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x1, y1] = ring[i], [x2, y2] = ring[(i + 1) % ring.length];
+    a += (x1 * mLon) * (y2 * M_PER_DEG) - (x2 * mLon) * (y1 * M_PER_DEG);
+  }
+  return Math.abs(a) / 2;
+}
+function pointInRing(x, y, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+// Even–odd across all rings, so holes in a tract are handled.
+function pointInRings(x, y, rings) { let n = 0; for (const r of rings) if (pointInRing(x, y, r)) n++; return n % 2 === 1; }
+function ringCentroid(rings) {
+  let x = 0, y = 0, n = 0;
+  for (const p of rings[0]) { x += p[0]; y += p[1]; n++; }
+  return { x: x / n, y: y / n };
+}
+function segDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+  const t = L ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L)) : 0;
+  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+}
+
+// ---------------------------------------------------------------------------
+// REST queries: get the matching IDs first, then fetch pages in parallel.
+// POST keeps long ID lists out of the URL (form posts need no CORS preflight).
+// ---------------------------------------------------------------------------
+async function restQuery(url, params) {
+  const res = await fetch(`${url}/query`, { method: "POST", body: new URLSearchParams({ ...params, f: "json" }) });
+  const j = await res.json();
+  if (j.error) throw new Error(j.error.message || "Query failed");
+  return j;
+}
+async function inPool(items, limit, fn) {   // run fn over items, at most `limit` at a time
+  const out = new Array(items.length); let next = 0;
+  const worker = async () => { while (next < items.length) { const i = next++; out[i] = await fn(items[i]); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+async function queryParallel(url, filter, fetchParams, pageSize) {
+  const { objectIds = [] } = await restQuery(url, { ...filter, returnIdsOnly: "true" });
+  const chunks = [];
+  for (let i = 0; i < objectIds.length; i += pageSize) chunks.push(objectIds.slice(i, i + pageSize));
+  const pages = await inPool(chunks, 6, (ids) => restQuery(url, { ...fetchParams, objectIds: ids.join(","), outSR: "4326" }));
+  return pages.flatMap((j) => j.features || []);
+}
+function nearParams(lon, lat, distM) {
+  return { geometry: `${lon},${lat}`, geometryType: "esriGeometryPoint", inSR: "4326",
+    spatialRel: "esriSpatialRelIntersects", distance: String(distM), units: "esriSRUnit_Meter" };
+}
+async function loadTracts(lon, lat) {
+  const near = { ...nearParams(lon, lat, RADIUS_M), where: "1=1" };
+  // Vehicles (with shapes) and poverty (numbers only) share the same census tracts: fetch both at once.
+  const [veh, povRows] = await Promise.all([
+    queryParallel(URLS.vehicles, near, { outFields: "GEOID,NAME,B08201_001E,B08201_002E,B08201_calc_pctNoVehE",
+      returnGeometry: "true", returnCentroid: "true", maxAllowableOffset: "0.0001", geometryPrecision: "6" }, 50),
+    queryParallel(URLS.poverty, near, { outFields: "GEOID,B17020_001E,B17020_002E,B17020_calc_pctPovE", returnGeometry: "false" }, 50)
+  ]);
+  const pov = {};
+  povRows.forEach((r) => (pov[r.attributes.GEOID] = r.attributes));
+  return veh.filter((f) => f.geometry && f.geometry.rings).map((f, i) => {
+    const a = f.attributes, p = pov[a.GEOID] || {};
+    const c = (f.centroid && isFinite(f.centroid.x)) ? f.centroid : ringCentroid(f.geometry.rings);
+    return { oid: i + 1, geoid: a.GEOID, name: a.NAME, rings: f.geometry.rings, cx: c.x, cy: c.y,
+      hh: a.B08201_001E || 0, noveh: a.B08201_002E || 0, novehPct: a.B08201_calc_pctNoVehE,
+      pop: p.B17020_001E || 0, poor: p.B17020_002E || 0, povPct: p.B17020_calc_pctPovE };
+  });
+}
+async function loadStores(lon, lat) {
+  const feats = await queryParallel(URLS.snap, { ...nearParams(lon, lat, MAX_SEARCH_M), where: "Store_Type <> 'Restaurant Meals Program'" },
+    { outFields: "Store_Name,Store_Type,Store_Street_Address,City", returnGeometry: "true" }, 1000);
+  return feats.filter((f) => f.geometry).map((f, i) => ({ oid: i + 1, x: f.geometry.x, y: f.geometry.y,
+    name: f.attributes.Store_Name, type: f.attributes.Store_Type || "Other",
+    address: [f.attributes.Store_Street_Address, f.attributes.City].filter(Boolean).join(", ") }));
+}
+// Transit stops are not downloaded in bulk. The map layer streams only what is on screen,
+// and the store's "stops within ¼ mile" is one small count query after the store stops moving.
+async function countStopsNear(x, y) {
+  const j = await restQuery(URLS.stops, { ...nearParams(x, y, WALK_M), where: "1=1", returnCountOnly: "true" });
+  return j.count ?? 0;
+}
+let stopTimer = 0, stopSeq = 0;
+function refreshStopCount() {
+  const x = state.store.x, y = state.store.y, key = `${x.toFixed(4)},${y.toFixed(4)}`;
+  if (state.stopCount.key === key) return;
+  state.stopCount = { key, n: null };
+  clearTimeout(stopTimer);
+  stopTimer = setTimeout(async () => {
+    const seq = ++stopSeq;
+    let n; try { n = await countStopsNear(x, y); } catch { n = -1; }
+    if (seq === stopSeq && state.stopCount.key === key) { state.stopCount.n = n; renderFeedback(); }
+  }, 350);
+}
+
+// ---------------------------------------------------------------------------
+// Analysis
+// ---------------------------------------------------------------------------
+function isFullService(type) {
+  return type === "Supermarket" || type === "Super Store" || (state.rules.incGrocery && type === "Grocery Store");
+}
+function nearestFull(lon, lat) {
+  let best = Infinity;
+  for (const s of state.stores) if (isFullService(s.type)) best = Math.min(best, haversine(lon, lat, s.x, s.y));
+  return Math.min(best, MAX_SEARCH_M);   // cap: "at least this far" when none were found
+}
+function classifyTracts() {
+  const { pov, distMi } = state.rules;
+  for (const t of state.tracts) {
+    t.distMi = nearestFull(t.cx, t.cy) / MILE;
+    t.lowIncome = t.povPct != null && t.povPct >= pov;
+    t.lowAccess = t.distMi > distMi && t.pop > 0;
+    t.status = t.lowIncome && t.lowAccess ? "desert" : t.lowAccess ? "access" : t.lowIncome ? "income" : "ok";
+  }
+}
+
+// Group touching food desert neighborhoods into numbered "food desert areas".
+function buildDeserts() {
+  const D = state.tracts.filter((t) => t.status === "desert");
+  state.tracts.forEach((t) => (t.desertArea = null));
+  const mLon = M_PER_DEG * Math.cos(state.centre.lat * Math.PI / 180), TOL = 30;
+  const geo = D.map((t) => {
+    const pts = [], segs = []; let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const ring of t.rings) {
+      for (let k = 0; k < ring.length; k++) {
+        const x = ring[k][0] * mLon, y = ring[k][1] * M_PER_DEG;
+        pts.push(x, y); x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+        if (k > 0) segs.push(ring[k - 1][0] * mLon, ring[k - 1][1] * M_PER_DEG, x, y);
+      }
+    }
+    return { pts, segs, bb: [x0, y0, x1, y1] };
+  });
+  const touches = (a, b) => {
+    for (let i = 0; i < a.pts.length; i += 2) {
+      const px = a.pts[i], py = a.pts[i + 1];
+      if (px < b.bb[0] - TOL || px > b.bb[2] + TOL || py < b.bb[1] - TOL || py > b.bb[3] + TOL) continue;
+      for (let j = 0; j < b.segs.length; j += 4) if (segDist(px, py, b.segs[j], b.segs[j + 1], b.segs[j + 2], b.segs[j + 3]) < TOL) return true;
+    }
+    return false;
+  };
+  const parent = D.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < D.length; i++) for (let j = i + 1; j < D.length; j++) {
+    const a = geo[i].bb, b = geo[j].bb;
+    if (a[0] > b[2] + TOL || b[0] > a[2] + TOL || a[1] > b[3] + TOL || b[1] > a[3] + TOL) continue;
+    if (find(i) !== find(j) && (touches(geo[i], geo[j]) || touches(geo[j], geo[i]))) parent[find(i)] = find(j);
+  }
+  const groups = {};
+  D.forEach((t, i) => (groups[find(i)] ||= []).push(t));
+  const sum = (a, k) => a.reduce((s, t) => s + (t[k] || 0), 0);
+  state.deserts = Object.values(groups).map((ts) => {
+    const top = ts.reduce((a, b) => (b.pop > a.pop ? b : a));
+    const hh = sum(ts, "hh"), noveh = sum(ts, "noveh");
+    return { tracts: ts, pop: sum(ts, "pop"), poor: sum(ts, "poor"), noveh, novehPct: hh ? 100 * noveh / hh : null, lx: top.cx, ly: top.cy };
+  }).sort((a, b) => b.pop - a.pop);
+  state.deserts.forEach((d, i) => { d.id = i + 1; d.tracts.forEach((t) => (t.desertArea = d.id)); });
+}
+
+// Spread each neighborhood's people over a grid of sample points, so the
+// "people served" number changes smoothly as the store moves.
+function buildSamples() {
+  const T = state.tracts, mLon = M_PER_DEG * Math.cos(state.centre.lat * Math.PI / 180);
+  const total = T.reduce((s, t) => s + t.rings.reduce((a, r) => a + ringAreaM2(r), 0), 0);
+  const step = Math.min(150, Math.max(50, Math.sqrt(total / 12000)));
+  const dLat = step / M_PER_DEG, dLon = step / mLon;
+  const xs = [], ys = [], ti = [];
+  T.forEach((t, i) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const r of t.rings) for (const [x, y] of r) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    let n = 0;
+    for (let y = Math.floor(y0 / dLat) * dLat + dLat / 2; y <= y1; y += dLat)
+      for (let x = Math.floor(x0 / dLon) * dLon + dLon / 2; x <= x1; x += dLon)
+        if (pointInRings(x, y, t.rings)) { xs.push(x); ys.push(y); ti.push(i); n++; }
+    if (!n) { xs.push(t.cx); ys.push(t.cy); ti.push(i); n = 1; }
+    t.nSamples = n;
+  });
+  state.samples = { x: Float64Array.from(xs), y: Float64Array.from(ys), t: Int32Array.from(ti), dist: new Float32Array(xs.length) };
+}
+function computeSampleAccess() {
+  const S = state.samples; if (!S) return;
+  for (let i = 0; i < S.x.length; i++) S.dist[i] = nearestFull(S.x[i], S.y[i]);
+}
+
+// What would a store at (x, y) do?
+function evaluateStore(x, y) {
+  const S = state.samples, T = state.tracts, r = state.rules.distMi * MILE, r2 = r * r;
+  const mLon = M_PER_DEG * Math.cos(y * Math.PI / 180);
+  let all = 0, gain = 0, gainDesert = 0, noCar = 0, poor = 0;
+  if (S) for (let i = 0; i < S.x.length; i++) {
+    const dx = (S.x[i] - x) * mLon, dy = (S.y[i] - y) * M_PER_DEG;
+    if (dx * dx + dy * dy > r2) continue;
+    const t = T[S.t[i]], w = 1 / t.nSamples;
+    all += t.pop * w;
+    if (S.dist[i] > r) {
+      gain += t.pop * w; noCar += t.noveh * w; poor += t.poor * w;
+      if (t.status === "desert") gainDesert += t.pop * w;
+    }
+  }
+  const tract = T.find((t) => pointInRings(x, y, t.rings)) || null;
+  return {
+    all, gain, gainDesert, noCar, poor,
+    nearestMi: nearestFull(x, y) / MILE,
+    stops: state.stopCount.key === `${x.toFixed(4)},${y.toFixed(4)}` ? state.stopCount.n : null,   // null = still counting
+    tract, desertArea: tract ? tract.desertArea : null
+  };
+}
+const minPlotM2 = () => 3 * state.store.length * state.store.width;
+function plotCheck() {
+  const s = state.store, plot = state.plot;
+  if (!plot) return null;
+  const area = ringAreaM2(plot.slice(0, -1));
+  const corners = rectRing(s.x, s.y, s.length, s.width, s.rot).slice(0, 4);
+  const inside = corners.filter(([x, y]) => pointInRing(x, y, plot)).length;
+  return { area, bigEnough: area >= minPlotM2(), fits: inside === 4, onPlot: inside > 0 || pointInRing(s.x, s.y, plot) };
+}
+
+// ---------------------------------------------------------------------------
+// Map setup
+// ---------------------------------------------------------------------------
+const sceneEl = $("scene");
+await customElements.whenDefined("arcgis-scene");
+await sceneEl.viewOnReady();
+const view = sceneEl.view;
+const map = sceneEl.map;
+const [FeatureLayer, SceneLayer, GraphicsLayer, Graphic, reactiveUtils, Point] = await $arcgis.import([
+  "@arcgis/core/layers/FeatureLayer.js", "@arcgis/core/layers/SceneLayer.js",
+  "@arcgis/core/layers/GraphicsLayer.js", "@arcgis/core/Graphic.js", "@arcgis/core/core/reactiveUtils.js",
+  "@arcgis/core/geometry/Point.js"
+]);
+const SR = { wkid: 4326 };
+const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255, a]; };
+
+const buildings = new SceneLayer({ url: URLS.buildings, title: "3D buildings", popupEnabled: false,
+  renderer: { type: "simple", symbol: { type: "mesh-3d", symbolLayers: [{ type: "fill", material: { color: [240, 238, 232, 1] }, edges: { type: "solid", color: [110, 110, 110, 0.35], size: 0.6 } }] } } });
+const routes = new FeatureLayer({ url: URLS.routes, title: "Transit routes", minScale: 150000, popupEnabled: false,
+  elevationInfo: { mode: "on-the-ground" }, renderer: { type: "simple", symbol: { type: "simple-line", color: [42, 111, 219, 0.6], width: 2 } } });
+map.addMany([routes, buildings]);
+buildings.load().catch(() => setStatus("3D buildings could not be loaded here; the rest of the app still works."));
+
+let tractLayer = null, storeLayer = null, stopLayer = null;
+const labelLayer = new GraphicsLayer({ title: "Food desert labels", elevationInfo: { mode: "relative-to-scene" } });
+const ringLayer = new GraphicsLayer({ title: "Store reach", elevationInfo: { mode: "on-the-ground" } });
+const plotLayer = new GraphicsLayer({ title: "Plot", elevationInfo: { mode: "on-the-ground" } });
+const measureLayer = new GraphicsLayer({ title: "Measuring", elevationInfo: { mode: "on-the-ground" } });
+const myStoreLayer = new GraphicsLayer({ title: "Your store", elevationInfo: { mode: "relative-to-ground" } });
+const handleLayer = new GraphicsLayer({ title: "Store handles", elevationInfo: { mode: "relative-to-ground" } });
+map.addMany([ringLayer, plotLayer, measureLayer, myStoreLayer, handleLayer, labelLayer]);
+
+// ---- Neighborhoods -------------------------------------------------------
+function tractRenderer() {
+  if (state.colourBy === "status") {
+    const notDesert = { type: "simple-fill", color: [255, 255, 255, 0.03], outline: { color: [255, 255, 255, 0.6], width: 0.7 } };
+    const desert = { type: "simple-fill", color: hexA(C.desert, 0.5), outline: { color: [255, 200, 205, 1], width: 2 } };
+    return { type: "unique-value", field: "isDesert", defaultSymbol: notDesert,
+      uniqueValueInfos: [{ value: "yes", label: "Food desert", symbol: desert }, { value: "no", label: "Not a food desert", symbol: notDesert }] };
+  }
+  const outline = { color: [255, 255, 255, 0.9], width: 0.8 };
+  const cfg = {
+    pov:   { field: "povPct",   breaks: [10, 20, 30, 40], unit: "%", ramp: ["#f7eef6", "#d4b9da", "#c994c7", "#df65b0", "#980043"] },
+    noveh: { field: "novehPct", breaks: [8, 15, 25, 35],  unit: "%", ramp: ["#f1eef6", "#bdc9e1", "#74a9cf", "#2b8cbe", "#045a8d"] },
+    dist:  { field: "distMi",   breaks: [0.5, 1, 1.5, 2], unit: " mi", ramp: ["#ffffcc", "#fed976", "#fd8d3c", "#e31a1c", "#800026"] }
+  }[state.colourBy];
+  const infos = []; let lo = -Infinity;
+  cfg.breaks.concat([Infinity]).forEach((hi, i) => {
+    const label = lo === -Infinity ? `under ${hi}${cfg.unit}` : hi === Infinity ? `${lo}${cfg.unit} or more` : `${lo}–${hi}${cfg.unit}`;
+    infos.push({ minValue: lo === -Infinity ? -1e9 : lo, maxValue: hi === Infinity ? 1e9 : hi, label, symbol: { type: "simple-fill", color: hexA(cfg.ramp[i], 0.6), outline } });
+    lo = hi;
+  });
+  return { type: "class-breaks", field: cfg.field, classBreakInfos: infos, defaultSymbol: { type: "simple-fill", color: [204, 204, 204, 0.2], outline }, defaultLabel: "No data" };
+}
+
+function tractPopup({ graphic }) {
+  const a = graphic.attributes, r = state.rules;
+  const div = document.createElement("div");
+  const d = a.desertArea ? state.deserts.find((x) => x.id === a.desertArea) : null;
+  markExplored();
+  const yesNo = (yes) => `<b>${yes ? "Yes" : "No"}</b>`;
+  const small = `<p style="margin:0 0 6px;font-size:12px;color:#5b6475">${esc(a.NAME)}</p>`;
+  div.innerHTML = d
+    ? `<p style="margin:0 0 4px;font-size:15px"><b style="color:${C.desert}">Part of Food desert ${d.id}</b></p>${small}
+       <p style="margin:0 0 6px"><b>This neighborhood:</b> ${fmt(a.pop)} people. ${fmt1(a.povPct)}% of them live in poverty. ${fmt(a.noveh)} households have no car. The nearest supermarket is ${fmtMi(a.distMi)} miles away.</p>
+       <p style="margin:0 0 8px;padding:6px 8px;background:#fde8eb;border-radius:6px"><b>All of Food desert ${d.id}:</b> ${fmt(d.pop)} people in ${d.tracts.length} neighborhood${d.tracts.length > 1 ? "s" : ""}.</p>`
+    : `<p style="margin:0 0 4px;font-size:15px"><b>Not a food desert</b></p>${small}
+       <p style="margin:0 0 4px">Poverty is ${fmt1(a.povPct)}%. At least ${r.pov}%? ${yesNo(a.povPct != null && a.povPct >= r.pov)}</p>
+       <p style="margin:0 0 4px">Nearest supermarket is ${fmtMi(a.distMi)} miles away. More than ${miWord(r.distMi)}? ${yesNo(a.distMi > r.distMi)}</p>
+       <p style="margin:0 0 6px;font-size:12.5px">A food desert needs <b>Yes</b> to both.</p>
+       <p style="margin:0 0 8px;color:#5b6475">${fmt(a.pop)} people · ${a.novehPct == null ? "–" : fmt1(a.novehPct) + "%"} of households have no car</p>`;
+  const btn = document.createElement("button");
+  btn.textContent = state.store.placed ? "🏪 Move my store here" : "🏪 Try my store here";
+  btn.style.cssText = `background:${C.store};border:0;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer;font:inherit`;
+  btn.addEventListener("click", () => {
+    const t = state.tracts.find((x) => x.oid === a.OBJECTID);
+    view.closePopup?.(); if (view.popup) view.popup.visible = false;
+    dropStoreAt(t.cx, t.cy, true);
+  });
+  div.appendChild(btn);
+  return div;
+}
+
+function buildTractLayer() {
+  if (tractLayer) map.remove(tractLayer);
+  const graphics = state.tracts.map((t) => new Graphic({
+    geometry: { type: "polygon", rings: t.rings, spatialReference: SR },
+    attributes: { OBJECTID: t.oid, NAME: t.name, pop: t.pop, poor: t.poor, povPct: t.povPct ?? null, noveh: t.noveh,
+      novehPct: t.novehPct ?? null, distMi: Math.round(t.distMi * 100) / 100, isDesert: t.status === "desert" ? "yes" : "no",
+      desertArea: t.desertArea || 0 }
+  }));
+  tractLayer = new FeatureLayer({
+    title: "Neighborhoods", source: graphics, objectIdField: "OBJECTID", geometryType: "polygon", spatialReference: SR,
+    elevationInfo: { mode: "on-the-ground" }, visible: $("lyrTracts").checked, outFields: ["*"],
+    fields: [{ name: "OBJECTID", type: "oid" }, { name: "NAME", type: "string" }, { name: "pop", type: "integer" }, { name: "poor", type: "integer" },
+      { name: "povPct", type: "double" }, { name: "noveh", type: "integer" }, { name: "novehPct", type: "double" },
+      { name: "distMi", type: "double" }, { name: "isDesert", type: "string" }, { name: "desertArea", type: "integer" }],
+    renderer: tractRenderer(),
+    popupTemplate: { title: "Neighborhood", outFields: ["*"], content: tractPopup }
+  });
+  map.add(tractLayer, 0);
+}
+function drawDesertLabels() {
+  labelLayer.removeAll();
+  for (const d of state.deserts) {
+    labelLayer.add(new Graphic({ geometry: { type: "point", x: d.lx, y: d.ly, spatialReference: SR },
+      symbol: { type: "point-3d", verticalOffset: { screenLength: 40, maxWorldLength: 600, minWorldLength: 30 },
+        callout: { type: "line", size: 1.5, color: C.desert },
+        symbolLayers: [{ type: "text", text: `Food desert ${d.id}\n${fmt(d.pop)} people`, size: 12, lineHeight: 1.1,
+          material: { color: "white" }, background: { color: C.desert }, halo: { color: C.desert, size: 1 } }] } }));
+  }
+}
+
+// ---- Food stores and stops --------------------------------------------------
+function buildStoreLayer() {
+  if (storeLayer) map.remove(storeLayer);
+  const cat = (t) => isFullService(t) ? "full" : t === "Grocery Store" ? "grocery" : t === "Farmers and Markets" ? "market" : "other";
+  const graphics = state.stores.map((s) => new Graphic({ geometry: { type: "point", x: s.x, y: s.y, spatialReference: SR },
+    attributes: { OBJECTID: s.oid, name: s.name, type: s.type, address: s.address, cat: cat(s.type) } }));
+  const icon = (color, size) => ({ type: "point-3d",
+    verticalOffset: { screenLength: size > 12 ? 26 : 0, maxWorldLength: 300, minWorldLength: 10 },
+    callout: size > 12 ? { type: "line", size: 1, color: [40, 40, 40, 0.7] } : undefined,
+    symbolLayers: [{ type: "icon", resource: { primitive: "circle" }, material: { color }, size, outline: { color: [255, 255, 255, 1], size: 1.5 } }] });
+  storeLayer = new FeatureLayer({
+    title: "Food stores", source: graphics, objectIdField: "OBJECTID", geometryType: "point", spatialReference: SR,
+    elevationInfo: { mode: "relative-to-scene" }, visible: $("lyrStores").checked,
+    fields: [{ name: "OBJECTID", type: "oid" }, { name: "name", type: "string" }, { name: "type", type: "string" }, { name: "address", type: "string" }, { name: "cat", type: "string" }],
+    renderer: { type: "unique-value", field: "cat", defaultSymbol: icon("#8a8f98", 7), uniqueValueInfos: [
+      { value: "full", label: "Supermarket", symbol: icon("#1a8f4a", 16) }, { value: "grocery", label: "Small grocery store", symbol: icon("#6fbf73", 10) },
+      { value: "market", label: "Farmers market", symbol: icon("#d4a017", 10) }, { value: "other", label: "Convenience / other", symbol: icon("#8a8f98", 7) }] },
+    popupTemplate: { title: "{name}", content: "<b>{type}</b><br>{address}" }
+  });
+  map.add(storeLayer);
+}
+// Bus and rail stops stream straight from the U.S. DOT service, only for the area on screen.
+stopLayer = new FeatureLayer({
+  url: URLS.stops, title: "Bus and rail stops", outFields: ["stop_name", "stop_type_text"],
+  elevationInfo: { mode: "on-the-ground" }, minScale: 60000,
+  renderer: { type: "simple", symbol: { type: "point-3d", symbolLayers: [{ type: "icon", resource: { primitive: "square" }, material: { color: "#2a6fdb" }, size: 6, outline: { color: "white", size: 0.8 } }] } },
+  popupTemplate: { title: "{stop_name}", content: "Bus or rail stop ({stop_type_text})" }
+});
+map.add(stopLayer);
+
+// ---- Your store -----------------------------------------------------------
+// Sizes snap to 10 ft. Stored in metres so the map maths is unchanged.
+const SNAP_M = 10 * FT, LIMITS = { length: [100 * FT, 490 * FT], width: [70 * FT, 330 * FT] }, DEFAULT_SIZE = { length: 230 * FT, width: 150 * FT, rot: 0 };
+const clamp = (v, [lo, hi]) => Math.max(lo, Math.min(hi, v));
+const snap = (v) => Math.round(v / SNAP_M) * SNAP_M;
+const norm360 = (a) => ((a % 360) + 360) % 360;
+// Store frame: x runs along the length, y along the width, turned rot° clockwise from east–west.
+function toLocal(lon, lat, s) {
+  const mLon = M_PER_DEG * Math.cos(s.y * Math.PI / 180), t = s.rot * Math.PI / 180, c = Math.cos(t), n = Math.sin(t);
+  const E = (lon - s.x) * mLon, N = (lat - s.y) * M_PER_DEG;
+  return { x: E * c - N * n, y: E * n + N * c, E, N };
+}
+function fromLocal(x, y, s) {
+  const mLon = M_PER_DEG * Math.cos(s.y * Math.PI / 180), t = s.rot * Math.PI / 180, c = Math.cos(t), n = Math.sin(t);
+  return [s.x + (x * c + y * n) / mLon, s.y + (-x * n + y * c) / M_PER_DEG];
+}
+const rotOffset = (s) => Math.max(15, 0.5 * s.width);
+function handleSpots(s) {   // [id, local x, local y]
+  return [["+x", s.length / 2, 0], ["-x", -s.length / 2, 0], ["+y", 0, s.width / 2], ["-y", 0, -s.width / 2], ["rot", 0, s.width / 2 + rotOffset(s)]];
+}
+// New shape after dragging a handle, worked out from the shape when the drag started.
+function applyHandleDrag(start, handle, lon, lat) {
+  const p = toLocal(lon, lat, start), out = { ...start };
+  if (handle === "rot") {
+    const bearing = Math.atan2(p.E, p.N) * 180 / Math.PI;
+    let rot = norm360(start.rot + bearing - start.grabBearing);
+    for (const q of [0, 90, 180, 270, 360]) if (Math.abs(rot - q) < 3) rot = q % 360;   // gentle snap to square
+    out.rot = Math.round(rot);
+    return out;
+  }
+  const along = handle[1] === "x" ? "length" : "width", sign = handle[0] === "+" ? 1 : -1;
+  const pos = handle[1] === "x" ? p.x : p.y, half = start[along] / 2;
+  const size = clamp(snap(sign * pos + half), LIMITS[along]);   // opposite side stays where it was
+  const shift = sign * (size - start[along]) / 2;
+  const [x, y] = handle[1] === "x" ? fromLocal(shift, 0, start) : fromLocal(0, shift, start);
+  out[along] = size; out.x = x; out.y = y;
+  return out;
+}
+
+let gBox = null, gLabel = null, gRing = null, gHandles = [], gRotLine = null;
+const boxSymbol = (editing) => ({ type: "polygon-3d", symbolLayers: [{ type: "extrude", size: STORE_HEIGHT_M, material: { color: C.store },
+  edges: { type: "solid", color: editing ? [255, 210, 31, 1] : [255, 255, 255, 0.9], size: editing ? 2.5 : 1.2 } }] });
+const labelSymbol = (text) => ({ type: "point-3d", verticalOffset: { screenLength: 40, maxWorldLength: 300, minWorldLength: 15 },
+  callout: { type: "line", size: 1.5, color: C.store },
+  symbolLayers: [{ type: "text", text, size: 12, material: { color: "white" }, background: { color: C.store } }] });
+const handleSymbol = (isRot) => ({ type: "point-3d", symbolLayers: isRot
+  ? [{ type: "icon", resource: { primitive: "circle" }, material: { color: "#f28c28" }, size: 22, outline: { color: "white", size: 2 } },
+     { type: "text", text: "⟳", size: 13, material: { color: "white" } }]
+  : [{ type: "icon", resource: { primitive: "circle" }, material: { color: "white" }, size: 16, outline: { color: C.store, size: 3 } }] });
+const sizeText = (s) => `${ft(s.length)} ft × ${ft(s.width)} ft · turned ${s.rot % 180}°`;
+
+function drawMyStore() {
+  const s = state.store;
+  if (!s.placed && !state.carrying) {
+    myStoreLayer.removeAll(); ringLayer.removeAll(); handleLayer.removeAll();
+    gBox = gLabel = gRing = gRotLine = null; gHandles = []; return;
+  }
+  const box = { type: "polygon", rings: [rectRing(s.x, s.y, s.length, s.width, s.rot)], spatialReference: SR };
+  const ring = { type: "polygon", rings: [circleRing(s.x, s.y, state.rules.distMi * MILE)], spatialReference: SR };
+  const pt = { type: "point", x: s.x, y: s.y, z: STORE_HEIGHT_M, spatialReference: SR };
+  const label = state.drag && state.drag.handle !== "body" ? sizeText(s) : "Your store";
+  if (!gBox) {
+    gBox = new Graphic({ geometry: box, attributes: { mystore: 1 }, symbol: boxSymbol(state.editing) });
+    gLabel = new Graphic({ geometry: pt, symbol: labelSymbol(label) });
+    gRing = new Graphic({ geometry: ring, symbol: { type: "simple-fill", color: hexA(C.ring, 0.07), outline: { color: hexA(C.ring, 1), width: 2.5, style: "dash" } } });
+    myStoreLayer.addMany([gBox, gLabel]); ringLayer.add(gRing);
+  } else { gBox.geometry = box; gLabel.geometry = pt; gRing.geometry = ring; }
+  if (gBox.symbol.symbolLayers.getItemAt(0).edges.size !== boxSymbol(state.editing).symbolLayers[0].edges.size) gBox.symbol = boxSymbol(state.editing);
+  if (gLabel._text !== label) { gLabel.symbol = labelSymbol(label); gLabel._text = label; }
+  drawHandles();
+  const sl = $("sizeLine"); if (sl) sl.innerHTML = `Size <b>${ft(s.length)} ft × ${ft(s.width)} ft</b> (${Math.round(s.length)} m × ${Math.round(s.width)} m), turned <b>${s.rot % 180}°</b>. Floor area <b>${fmt(s.length * s.width * SQFT)} sq ft</b>. Height is fixed at ${ft(STORE_HEIGHT_M)} ft.`;
+  syncInputs();
+  const es = $("editSize"); if (es) es.textContent = `(${sizeText(s)})`;
+}
+function drawHandles() {
+  const s = state.store;
+  if (!state.editing || state.carrying) { handleLayer.removeAll(); gHandles = []; gRotLine = null; return; }
+  const spots = handleSpots(s).map(([id, lx, ly]) => { const [x, y] = fromLocal(lx, ly, s); return { id, x, y }; });
+  const [ex, ey] = fromLocal(0, s.width / 2, s), rotSpot = spots.find((h) => h.id === "rot");
+  const line = { type: "polyline", paths: [[[ex, ey, STORE_HEIGHT_M], [rotSpot.x, rotSpot.y, STORE_HEIGHT_M]]], spatialReference: SR, hasZ: true };
+  if (!gHandles.length) {
+    gRotLine = new Graphic({ geometry: line, symbol: { type: "line-3d", symbolLayers: [{ type: "line", size: 2, material: { color: "#f28c28" } }] } });
+    handleLayer.add(gRotLine);
+    gHandles = spots.map((h) => new Graphic({ geometry: { type: "point", x: h.x, y: h.y, z: STORE_HEIGHT_M, spatialReference: SR },
+      attributes: { handle: h.id }, symbol: handleSymbol(h.id === "rot") }));
+    handleLayer.addMany(gHandles);
+  } else {
+    gRotLine.geometry = line;
+    gHandles.forEach((g, i) => (g.geometry = { type: "point", x: spots[i].x, y: spots[i].y, z: STORE_HEIGHT_M, spatialReference: SR }));
+  }
+}
+
+// Which part of the store is under a screen point? Worked out on screen, so it is instant (no waiting).
+function groundZ(x, y) {
+  try { return view.groundView.elevationSampler.queryElevation(new Point({ x, y, spatialReference: SR })).z || 0; } catch { return 0; }
+}
+function screenOf(x, y, z) { return view.toScreen(new Point({ x, y, z, spatialReference: SR })); }
+function convexHull(pts) {
+  pts = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], hi = [];
+  for (const p of pts) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (const p of pts.reverse()) { while (hi.length >= 2 && cross(hi[hi.length - 2], hi[hi.length - 1], p) <= 0) hi.pop(); hi.push(p); }
+  return lo.slice(0, -1).concat(hi.slice(0, -1));
+}
+function storePartAt(sx, sy) {
+  const s = state.store; if (!s.placed || state.carrying) return null;
+  const zg = groundZ(s.x, s.y), top = zg + STORE_HEIGHT_M;
+  if (state.editing) {
+    for (const [id, lx, ly] of handleSpots(s)) {
+      const [x, y] = fromLocal(lx, ly, s), p = screenOf(x, y, top);
+      if (p && Math.hypot(p.x - sx, p.y - sy) <= (id === "rot" ? 18 : 14)) return id;
+    }
+  }
+  const pts = [];
+  for (const [x, y] of rectRing(s.x, s.y, s.length, s.width, s.rot).slice(0, 4))
+    for (const z of [zg, top]) { const p = screenOf(x, y, z); if (p) pts.push([p.x, p.y]); }
+  return pts.length >= 3 && pointInRing(sx, sy, convexHull(pts)) ? "body" : null;
+}
+
+function setStorePos(x, y) {
+  state.store.x = x; state.store.y = y;
+  drawMyStore(); renderFeedback(); renderPlotLine();
+}
+let rafId = 0, pendingFn = null;
+function queueFrame(fn) { pendingFn = fn; if (!rafId) rafId = requestAnimationFrame(() => { rafId = 0; pendingFn(); }); }
+const queueStorePos = (x, y) => queueFrame(() => setStorePos(x, y));
+
+// ---------------------------------------------------------------------------
+// Panel + feedback rendering
+// ---------------------------------------------------------------------------
+function renderLegend() {
+  const titles = { status: "Neighborhoods", pov: "Poverty rate", noveh: "Households without a car", dist: "Distance to a supermarket" };
+  let h = `<h4>${titles[state.colourBy]}</h4>`;
+  h += state.colourBy === "status"
+    ? `<div><span class="sw" style="background:${C.desert};border:2px solid #ffc8cd"></span>Food desert (numbered areas)</div>
+       <div><span class="sw" style="background:transparent;border:1.5px solid #9aa3b2"></span>Not a food desert</div>`
+    : tractRenderer().classBreakInfos.map((c) => `<div><span class="sw" style="background:rgba(${c.symbol.color.slice(0, 3).join(",")},.8)"></span>${c.label}</div>`).join("");
+  h += `<h4>Food stores</h4>
+    <div><span class="dot" style="background:#1a8f4a;width:14px;height:14px;border:2px solid #fff;box-shadow:0 0 0 1px #999"></span>Supermarket</div>
+    <div><span class="dot" style="background:#6fbf73"></span>Small grocery store</div>
+    <div><span class="dot" style="background:#d4a017"></span>Farmers market</div>
+    <div><span class="dot" style="background:#8a8f98;width:8px;height:8px"></span>Convenience store or other shop</div>
+    <h4>Getting around</h4>
+    <div><span class="sw" style="background:#2a6fdb;width:9px;height:9px"></span>Bus or rail stop</div>
+    <div><span style="width:16px;height:3px;background:#2a6fdb;flex:none"></span>Bus or rail route</div>
+    <h4>Your plan</h4>
+    <div><span class="sw" style="background:${C.store}"></span>Your store (30 ft tall)</div>
+    <div><span class="ring" style="border:2.5px dashed ${C.ring}"></span>Area your store serves (${miWord(state.rules.distMi)})</div>
+    <div><span class="sw" style="background:rgba(255,210,31,.35);border:2px dashed ${C.plot}"></span>Your measured plot</div>`;
+  $("legend").innerHTML = h;
+}
+
+function renderSummary() {
+  const D = state.deserts, sum = (a, k) => a.reduce((s, t) => s + (t[k] || 0), 0);
+  const place = state.centre.label.startsWith("the area") ? "the map" : state.centre.label.split(" (")[0].split(",")[0];
+  const full = state.stores.filter((s) => isFullService(s.type) && haversine(state.centre.lon, state.centre.lat, s.x, s.y) <= RADIUS_M).length;
+  $("summary").innerHTML = D.length
+    ? `<div class="card"><p class="headline">We found <b class="big">${D.length}</b> food desert area${D.length > 1 ? "s" : ""} in this part of ${esc(place)}.
+        <b>${fmt(sum(D, "pop"))}</b> people live in them.</p>
+        <p class="small muted" style="margin:6px 0 0">There ${full === 1 ? "is 1 supermarket" : `are ${fmt(full)} supermarkets`} in the ${fmt1(RADIUS_M / MILE)}-mile study area.</p>
+        <div style="text-align:right;margin-top:4px">${verTag("desertAreas")}</div></div>`
+    : `<div class="card warn"><p class="small" style="margin:0">No food deserts found here with the current rules. Try another city.</p></div>`;
+  $("desertList").innerHTML = D.map((d) => `<li><span class="num" aria-hidden="true">${d.id}</span>
+      <span class="txt"><b>Food desert ${d.id}:</b> ${fmt(d.pop)} people</span>
+      <button class="ghost" data-details="${d.id}" aria-expanded="false" aria-controls="adetail${d.id}" aria-label="Details for food desert ${d.id}">Details</button>
+      <button class="ghost" data-go="${d.id}" aria-label="Go to food desert ${d.id} on the map">Go</button>
+      <div class="adetail" id="adetail${d.id}" hidden>
+        ${d.tracts.length} neighborhood${d.tracts.length > 1 ? "s" : ""}. ${d.pop ? fmt1(100 * d.poor / d.pop) : "–"}% of people live in poverty.
+        ${fmt(d.noveh)} households have no car${d.novehPct != null ? ` (${fmt(d.novehPct)}% of households)` : ""}.
+        From the middle of this area, the nearest supermarket is ${fmtMi(nearestFull(d.lx, d.ly) / MILE)} miles away.
+        <div style="margin-top:6px"><button class="store" data-try="${d.id}" style="font-size:12.5px;padding:5px 10px">🏪 Try my store here</button></div>
+      </div></li>`).join("");
+  document.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => { markExplored(); goToDesert(+b.dataset.go); }));
+  document.querySelectorAll("[data-details]").forEach((b) => b.addEventListener("click", () => {
+    const box = $(`adetail${b.dataset.details}`), open = box.hidden;
+    box.hidden = !open; b.setAttribute("aria-expanded", String(open)); b.textContent = open ? "Hide" : "Details";
+    if (open) markExplored();
+  }));
+  document.querySelectorAll("[data-try]").forEach((b) => b.addEventListener("click", () => {
+    const d = state.deserts.find((x) => x.id === +b.dataset.try); if (!d) return;
+    toolsOff(); dropStoreAt(d.lx, d.ly, true);
+  }));
+}
+function goToDesert(id) {
+  const d = state.deserts.find((x) => x.id === id); if (!d) return;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const t of d.tracts) for (const r of t.rings) for (const [x, y] of r) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  const span = Math.max(haversine(x0, y0, x1, y0), haversine(x0, y0, x0, y1));
+  const zoom = span < 1200 ? 15 : span < 2500 ? 14.5 : span < 5000 ? 14 : 13;
+  view.goTo({ center: [(x0 + x1) / 2, (y0 + y1) / 2], zoom, tilt: 45, heading: 0 }, { duration: 1500 }).catch(() => {});
+}
+
+function renderFeedback() {
+  const box = $("feedback");
+  if (!state.store.placed && !state.carrying) { box.style.display = "none"; return; }
+  refreshStopCount();   // counted on the server once the store stops moving
+  const r = evaluateStore(state.store.x, state.store.y), mi = miWord(state.rules.distMi);
+  state.lastEval = r;
+  const where = r.desertArea
+    ? `<div class="where in">✔ Inside <b>Food desert ${r.desertArea}</b></div>`
+    : `<div class="where out">⚠ Not inside a food desert</div>`;
+  const best = state.best && state.store.placed && !state.carrying && state.best.gain > r.gain + 0.5
+    ? `<div class="small" style="margin-top:6px">Your best spot so far: <b>${fmt(state.best.gain)}</b> people <button class="ghost" id="goBest" style="padding:2px 8px;font-size:12px">Go back</button></div>` : "";
+  box.innerHTML = `<div class="small muted">${state.carrying ? "Trying this spot…" : "Your store"}</div>
+    <div class="bignum">${fmt(r.gain)}</div>
+    <div class="small">people would get a supermarket within ${mi} ${verTag("peopleServed")}</div>
+    <ul>
+      <li>…living in food deserts <b>${fmt(r.gainDesert)}</b></li>
+      <li>…households without a car <b>${fmt(r.noCar)}</b></li>
+      <li>…people living in poverty <b>${fmt(r.poor)}</b></li>
+      <li>Nearest existing supermarket <b>${fmtMi(r.nearestMi)} mi</b></li>
+      <li><span>Bus or rail stops within ¼ mile <span class="ver">v${MODELS.transit.v}</span></span> <b>${r.stops == null ? "counting…" : r.stops < 0 ? "unavailable" : fmt(r.stops)}</b></li>
+    </ul>${where}${best}`;
+  box.style.display = "block";
+  $("goBest")?.addEventListener("click", () => { setStorePos(state.best.x, state.best.y); view.goTo({ center: [state.best.x, state.best.y] }, { duration: 1000 }).catch(() => {}); });
+}
+
+function renderPlotLine() {
+  const s = state.store; if (!s.placed) return;
+  const need = `Needs a plot of at least <b>${fmtArea(minPlotM2())}</b> for the store, parking and deliveries. ${verTag("plotRule")}`;
+  const chk = plotCheck();
+  $("plotLine").innerHTML = !chk
+    ? `<div class="plotline">${need}<button class="ghost" id="measureBtn" style="margin-top:6px;width:100%">📐 Measure the plot (optional)</button></div>`
+    : `<div class="plotline">Your plot: <b>${fmtArea(chk.area)}</b><br>${need}<br>
+        ${chk.bigEnough ? `<span class="ok">✔ big enough</span>` : `<span class="bad">✘ too small</span>`} ·
+        ${chk.fits ? `<span class="ok">✔ store fits on it</span>` : chk.onPlot ? `<span class="bad">✘ store hangs over the edge</span>` : `<span class="bad">✘ store is not on this plot</span>`}
+        <div class="row" style="margin-top:6px"><button class="ghost" id="measureBtn">Measure again</button><button class="ghost" id="clearPlot">Clear plot</button></div></div>`;
+  $("measureBtn").addEventListener("click", startMeasure);
+  $("clearPlot")?.addEventListener("click", () => { state.plot = null; plotLayer.removeAll(); renderPlotLine(); });
+}
+
+// ---------------------------------------------------------------------------
+// Placing and moving the store
+// ---------------------------------------------------------------------------
+function toolsOff() { if (state.carrying) cancelCarry(); cancelMeasure(); endEdit(); }
+function hidePopup() { view.closePopup?.(); if (view.popup) view.popup.visible = false; }
+function noteBest() {
+  const r = evaluateStore(state.store.x, state.store.y);
+  if (!state.best || r.gain > state.best.gain) state.best = { x: state.store.x, y: state.store.y, gain: r.gain };
+  announceStore();
+}
+
+// ---- Carrying: the store follows the pointer until you click (first placement, or "Pick up") ----
+function startCarry() {
+  cancelMeasure(); endEdit();
+  const s = state.store;
+  state.carryFrom = s.placed ? { x: s.x, y: s.y } : null;
+  if (!s.placed) { const c = view.center; s.x = c.longitude; s.y = c.latitude; }
+  state.carrying = true;
+  view.popupEnabled = false; hidePopup();
+  $("carryhint").style.display = "block";
+  drawMyStore(); renderFeedback(); updateProgress();
+}
+function cancelCarry() {
+  state.carrying = false; $("carryhint").style.display = "none"; view.popupEnabled = true;
+  if (state.carryFrom) setStorePos(state.carryFrom.x, state.carryFrom.y); else { drawMyStore(); renderFeedback(); }
+  updateProgress();
+}
+function dropStoreAt(x, y, fly) {
+  state.carrying = false; $("carryhint").style.display = "none";
+  state.store.placed = true;
+  setStorePos(x, y); noteBest();
+  $("storeCard").style.display = "block"; $("placeBtn").textContent = "🏪 Pick up my store";
+  startEdit();
+  if (fly) view.goTo({ center: [x, y], zoom: 16.5, tilt: 55 }, { duration: 1500 }).catch(() => {});
+  const r = state.lastEval;
+  setStatus(r.desertArea ? `Store placed in Food desert ${r.desertArea}. Now fit it to the land, then press Done.` : "Store placed, but not inside a food desert. Is that the best choice?");
+  updateProgress();
+}
+// Keyboard (or any) panning while carrying: when the map stops and the mouse hasn't moved lately, the store sits at the map centre.
+let lastPointerMove = 0;
+reactiveUtils.watch(() => view.stationary, (still) => {
+  if (!still || !state.carrying || Date.now() - lastPointerMove < 1000) return;
+  const c = view.center; queueStorePos(c.longitude, c.latitude);
+});
+$("placeBtn").addEventListener("click", (e) => {
+  if (state.carrying) { cancelCarry(); return; }
+  startCarry();
+  if (e.detail === 0) $("carryCentre").focus();   // opened from the keyboard: go straight to the button that puts it down
+});
+$("carryCancel").addEventListener("click", cancelCarry);
+$("carryCentre").addEventListener("click", (e) => { const c = view.center; dropStoreAt(c.longitude, c.latitude); if (e.detail === 0) $("inLength").focus(); });
+
+// ---- Editing: drag the store, its side dots and the turn handle ----
+function startEdit() {
+  if (!state.store.placed) return;
+  state.editing = true; view.popupEnabled = false; hidePopup();
+  $("edithint").style.display = "block"; drawMyStore(); updateProgress();
+}
+function endEdit() {
+  if (!state.editing) return;
+  state.editing = false; state.drag = null;
+  $("edithint").style.display = "none"; view.popupEnabled = true; drawMyStore(); renderFeedback(); updateProgress();
+}
+$("editDone").addEventListener("click", endEdit);
+$("resetSize").addEventListener("click", () => { Object.assign(state.store, DEFAULT_SIZE); drawMyStore(); renderPlotLine(); announceStore(); });
+
+// ---- Buttons and boxes that do the same as dragging (keyboard and switch users) ----
+function syncInputs() {
+  const s = state.store, set = (id, v) => { const el = $(id); if (el && document.activeElement !== el) el.value = v; };
+  set("inLength", ft(s.length)); set("inWidth", ft(s.width)); set("inRot", s.rot % 180);
+}
+function afterKeyboardChange() { drawMyStore(); renderFeedback(); renderPlotLine(); noteBest(); }
+document.querySelectorAll("[data-move]").forEach((b) => b.addEventListener("click", () => {
+  const s = state.store; if (!s.placed) return;
+  const [dx, dy] = b.dataset.move.split(",").map(Number), mLon = M_PER_DEG * Math.cos(s.y * Math.PI / 180);
+  const step = $("bigSteps").checked ? 10 * SNAP_M : SNAP_M;   // 10 ft or 100 ft
+  s.x += dx * step / mLon; s.y += dy * step / M_PER_DEG;
+  afterKeyboardChange();
+}));
+function sizeFromInput(id, along) {
+  const v = Number($(id).value), s = state.store;
+  if ($(id).value === "" || !isFinite(v)) { syncInputs(); return; }
+  s[along] = clamp(snap(v * FT), LIMITS[along]);
+  $(id).value = ft(s[along]);
+  afterKeyboardChange();
+}
+$("inLength").addEventListener("change", () => sizeFromInput("inLength", "length"));
+$("inWidth").addEventListener("change", () => sizeFromInput("inWidth", "width"));
+$("inRot").addEventListener("change", () => {
+  const v = Number($("inRot").value);
+  if ($("inRot").value === "" || !isFinite(v)) { syncInputs(); return; }
+  state.store.rot = ((Math.round(v) % 180) + 180) % 180;
+  $("inRot").value = state.store.rot;
+  afterKeyboardChange();
+});
+
+// Screen readers hear the store numbers once the store settles (not on every mouse move).
+let announceTimer = 0;
+function announceStore() {
+  clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => {
+    const s = state.store; if (!s.placed) return;
+    const r = evaluateStore(s.x, s.y);
+    $("announce").textContent = `Your store would bring ${fmt(r.gain)} people within ${miWord(state.rules.distMi)} of a supermarket, ` +
+      `${fmt(r.gainDesert)} of them in food deserts. ${r.desertArea ? `It is inside Food desert ${r.desertArea}.` : "It is not inside a food desert."} ` +
+      `Size ${sizeText(s)}.`;
+  }, 700);
+}
+
+const groundPoint = (sx, sy) => view.toMap({ x: sx, y: sy }, { exclude: [myStoreLayer, handleLayer, labelLayer, ringLayer] });
+function applyDrag(d, mp) {
+  const s = state.store;
+  if (d.handle === "body") {
+    const mLon = M_PER_DEG * Math.cos(mp.latitude * Math.PI / 180);
+    setStorePos(mp.longitude - d.offE / mLon, mp.latitude - d.offN / M_PER_DEG);
+  } else {
+    const ns = applyHandleDrag(d.start, d.handle, mp.longitude, mp.latitude);
+    Object.assign(s, { x: ns.x, y: ns.y, length: ns.length, width: ns.width, rot: ns.rot });
+    drawMyStore(); renderFeedback(); renderPlotLine();
+  }
+}
+view.on("pointer-down", (e) => {
+  if (state.carrying || state.measure || !state.store.placed) return;
+  const part = storePartAt(e.x, e.y);
+  if (!part) return;
+  if (!state.editing) startEdit();
+  const mp = groundPoint(e.x, e.y), s = state.store, d = { handle: part, moved: false, start: { ...s } };
+  if (mp) {
+    const p = toLocal(mp.longitude, mp.latitude, s);
+    d.offE = p.E; d.offN = p.N;                                    // keep the grab point under the finger
+    d.start.grabBearing = Math.atan2(p.E, p.N) * 180 / Math.PI;    // for turning
+  } else { d.offE = d.offN = 0; d.start.grabBearing = 0; }
+  state.drag = d;
+});
+view.on("pointer-up", () => { if (state.drag && !state.drag.moved) state.drag = null; });
+view.on("drag", (e) => {
+  if (state.carrying) {   // finger drag while carrying also moves the store
+    e.stopPropagation();
+    const mp = groundPoint(e.x, e.y);
+    if (mp) queueStorePos(mp.longitude, mp.latitude);
+    if (e.action === "end" && mp) dropStoreAt(mp.longitude, mp.latitude);
+    return;
+  }
+  const d = state.drag; if (!d) return;
+  e.stopPropagation();   // stop the map moving while the store is being dragged
+  d.moved = true;
+  const mp = groundPoint(e.x, e.y);
+  if (mp) queueFrame(() => applyDrag(d, mp));
+  if (e.action === "end") { state.drag = null; queueFrame(() => { if (mp) applyDrag(d, mp); drawMyStore(); noteBest(); renderFeedback(); }); }
+});
+view.on("pointer-move", (e) => {
+  lastPointerMove = Date.now();
+  if (state.carrying) { const mp = groundPoint(e.x, e.y); if (mp) queueStorePos(mp.longitude, mp.latitude); return; }
+  if (state.measure && state.measure.pts.length) { const mp = groundPoint(e.x, e.y); if (mp) drawMeasure([mp.longitude, mp.latitude]); return; }
+  if (state.store.placed && !state.drag) {   // show a hand cursor over the store and its handles
+    const part = storePartAt(e.x, e.y);
+    sceneEl.style.cursor = !part ? "" : part === "body" ? "move" : part === "rot" ? "grab" : "ew-resize";
+  }
+});
+view.on("click", (e) => {
+  if (state.carrying) { e.stopPropagation(); const mp = groundPoint(e.x, e.y) || e.mapPoint; if (mp) dropStoreAt(mp.longitude, mp.latitude); return; }
+  if (state.measure) { e.stopPropagation(); if (e.mapPoint) addMeasurePoint(e.mapPoint); return; }
+  if (!state.store.placed) return;
+  if (storePartAt(e.x, e.y)) { e.stopPropagation(); if (!state.editing) startEdit(); return; }   // click the store to edit it
+  if (state.editing) { e.stopPropagation(); setStatus("Press Done (or Esc) when you have finished fitting your store."); }   // a stray click doesn't end editing
+});
+view.on("double-click", (e) => {
+  if (!state.measure) return;
+  e.stopPropagation();
+  if (e.mapPoint) addMeasurePoint(e.mapPoint);
+  finishMeasure();
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") toolsOff(); });
+
+// ---------------------------------------------------------------------------
+// Measuring the plot
+// ---------------------------------------------------------------------------
+function startMeasure() {
+  if (state.carrying) cancelCarry();
+  endEdit();
+  state.measure = { pts: [] };
+  $("measureLive").textContent = ""; $("measurehint").style.display = "block";
+  view.popupEnabled = false;
+  if (view.scale > 8000) view.goTo({ center: [state.store.x, state.store.y], zoom: 17, tilt: 45 }, { duration: 1200 }).catch(() => {});
+}
+function cancelMeasure() {
+  if (!state.measure) return;
+  state.measure = null; measureLayer.removeAll(); $("measurehint").style.display = "none"; view.popupEnabled = true;
+}
+function drawMeasure(preview) {
+  measureLayer.removeAll();
+  const m = state.measure; if (!m) return;
+  const pts = preview ? [...m.pts, preview] : m.pts;
+  if (pts.length >= 3) measureLayer.add(new Graphic({ geometry: { type: "polygon", rings: [[...pts, pts[0]]], spatialReference: SR },
+    symbol: { type: "simple-fill", color: hexA(C.plot, 0.25), outline: { color: hexA(C.plot, 1), width: 2.5 } } }));
+  else if (pts.length === 2) measureLayer.add(new Graphic({ geometry: { type: "polyline", paths: [pts], spatialReference: SR },
+    symbol: { type: "simple-line", color: hexA(C.plot, 1), width: 2.5 } }));
+  m.pts.forEach(([x, y]) => measureLayer.add(new Graphic({ geometry: { type: "point", x, y, spatialReference: SR },
+    symbol: { type: "simple-marker", size: 8, color: C.plot, outline: { color: "#1d2433", width: 1 } } })));
+  const area = pts.length >= 3 ? ringAreaM2(pts) : 0;
+  $("measureLive").innerHTML = area ? `<b>${fmtArea(area)}</b> · need ${fmt(minPlotM2() * SQFT)} sq ft` : `${m.pts.length} corner${m.pts.length === 1 ? "" : "s"}`;
+}
+function addMeasurePoint(mp) {
+  const pts = state.measure.pts, last = pts[pts.length - 1];
+  if (last && haversine(last[0], last[1], mp.longitude, mp.latitude) < 1) return;   // ignore double-click repeats
+  pts.push([mp.longitude, mp.latitude]); drawMeasure();
+}
+function finishMeasure() {
+  const m = state.measure;
+  if (!m || m.pts.length < 3) { setStatus("Click at least three corners first."); return; }
+  state.plot = [...m.pts, m.pts[0]];
+  cancelMeasure(); drawPlot(); renderPlotLine();
+  const chk = plotCheck();
+  setStatus(`Your plot is ${fmtArea(chk.area)}. ${chk.bigEnough ? "Big enough" : "Too small"}${chk.fits ? " and the store fits." : ". The store does not fit inside it yet."}`);
+}
+function drawPlot() {
+  plotLayer.removeAll(); if (!state.plot) return;
+  const c = ringCentroid([state.plot]), area = ringAreaM2(state.plot.slice(0, -1));
+  plotLayer.addMany([
+    new Graphic({ geometry: { type: "polygon", rings: [state.plot], spatialReference: SR },
+      symbol: { type: "simple-fill", color: hexA(C.plot, 0.18), outline: { color: hexA(C.plot, 1), width: 2.5, style: "dash" } } }),
+    new Graphic({ geometry: { type: "point", x: c.x, y: c.y, spatialReference: SR },
+      symbol: { type: "point-3d", symbolLayers: [{ type: "text", text: `Plot: ${fmt(area * SQFT)} sq ft`, size: 11, material: { color: "#1d2433" }, background: { color: C.plot } }] } })
+  ]);
+}
+$("measureFinish").addEventListener("click", finishMeasure);
+$("measureCancel").addEventListener("click", cancelMeasure);
+$("measureUndo").addEventListener("click", () => { if (state.measure) { state.measure.pts.pop(); drawMeasure(); } });
+
+// ---------------------------------------------------------------------------
+// Site plan document
+// ---------------------------------------------------------------------------
+const DOCX_URL = "https://cdn.jsdelivr.net/npm/docx@9.7.2/dist/index.mjs";   // loaded only when a student makes a document
+let docxLib = null;
+async function loadDocx() { return (docxLib ||= await import(DOCX_URL)); }
+
+async function waitForView(timeoutMs = 6000) {
+  await Promise.race([reactiveUtils.whenOnce(() => !view.updating), new Promise((r) => setTimeout(r, timeoutMs))]);
+  await new Promise((r) => setTimeout(r, 300));
+}
+// One picture only. Use the student's current view if the store is on screen; otherwise fly to it once.
+async function takeSitePicture() {
+  const s = state.store;
+  const sp = view.toScreen({ type: "point", x: s.x, y: s.y, spatialReference: SR });
+  const pad = view.padding || {}, pl = (pad.left || 0) + 40, pb = (pad.bottom || 0) + 40;   // not hidden under the panel
+  const onScreen = sp && sp.x > pl && sp.y > 40 && sp.x < view.width - 40 && sp.y < view.height - pb && view.scale < 40000;
+  const saved = onScreen ? null : view.camera.clone();
+  if (!onScreen) { await view.goTo({ center: [s.x, s.y], zoom: 16, tilt: 50, heading: 0 }, { animate: false }); await waitForView(); }
+  const shot = await view.takeScreenshot({ format: "jpg", quality: 80, width: 1200, height: 750 });
+  if (saved) view.goTo(saved, { animate: false }).catch(() => {});
+  return shot.dataUrl;
+}
+function dataUrlToBytes(dataUrl) {
+  const bin = atob(dataUrl.split(",")[1]), out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// Build the student's site plan as a real Word (.docx) document.
+function buildSitePlanDoc(D, d) {
+  const s = d.store, r = d.eval, chk = d.plot, BLUE = "0077B6";
+  const P = (text, o = {}) => new D.Paragraph({ spacing: { after: 120 }, ...o, children: [new D.TextRun({ text, ...(o.run || {}) })] });
+  const H = (text) => new D.Paragraph({ heading: D.HeadingLevel.HEADING_2, spacing: { before: 280, after: 120 }, children: [new D.TextRun({ text, color: BLUE })] });
+  const border = { style: D.BorderStyle.SINGLE, size: 4, color: "DDE2EA" };
+  const cell = (text, w, bold) => new D.TableCell({ width: { size: w, type: D.WidthType.DXA },
+    borders: { top: border, bottom: border, left: border, right: border }, margins: { top: 60, bottom: 60, left: 100, right: 100 },
+    children: [new D.Paragraph({ children: [new D.TextRun({ text: String(text), bold })] })] });
+  const table = (rows) => new D.Table({ width: { size: 9360, type: D.WidthType.DXA }, columnWidths: [4200, 5160],
+    rows: rows.map(([a, b]) => new D.TableRow({ children: [cell(a, 4200, false), cell(b, 5160, true)] })) });
+  const mi = miWord(d.rules.distMi);
+  const plotTxt = chk ? `${fmtArea(chk.area)}: ${chk.bigEnough ? "big enough" : "too small"}; the store ${chk.fits ? "fits on it" : "does not fit on it yet"}` : "Not measured";
+  const why = (d.why || "(No reasons written yet.)").split(/\n+/).map((t) => P(t));
+  // Typed sizes (the Measurements box) work with a keyboard or trackball, so nobody has to draw to scale by hand.
+  const L = ft(s.length), W = ft(s.width), Ht = ft(STORE_HEIGHT_M), turn = s.rot % 180;
+  const steps = [
+    "Open SketchUp and start a new model that uses feet (for example the Architectural – Feet and Inches template). The red line runs east–west and the green line runs north–south.",
+    `Pick the Rectangle tool. Click once on the ground, move the mouse a little along the red line, then type ${L}',${W}' and press Enter. Don't click in the Measurements box; just type. The long side now runs east–west.`,
+    `Pick Push/Pull. Click the rectangle, move the mouse up a little, then type ${Ht}' and press Enter.`,
+    ...(turn ? [`Turn it ${turn}° clockwise, seen from above. Triple-click the store to select all of it. Pick Rotate, click the middle of the roof, click once along the red line, then type ${turn} and press Enter. If it turned the wrong way, type -${turn} and press Enter.`] : []),
+    "Design the store: entrance, windows, a loading bay for deliveries, and the roof.",
+    "Add a parking lot, bike racks and a path to the nearest bus stop. How will people without a car get here?"
+  ].map((t, i) => P(`${i + 1}.  ${t}`, { indent: { left: 360 } }));
+  const doneList = [
+    `The store is ${L} ft × ${W} ft and ${Ht} ft tall${turn ? `, turned ${turn}°` : ""}.`,
+    "It has an entrance and windows.",
+    "It has a loading bay for deliveries.",
+    "There is a parking lot and bike racks.",
+    "There is a path to the nearest bus stop.",
+    "You saved it with your name in the file name."
+  ].map((t) => P(`☐  ${t}`, { indent: { left: 360 } }));
+
+  return new D.Document({
+    creator: d.team || "Student", title: `Supermarket site plan – ${d.city}`, description: `Grocery Store Site Challenge v${APP_VERSION}`,
+    styles: { default: { document: { run: { font: "Arial", size: 22 } } } },
+    sections: [{
+      properties: { page: { size: { width: 12240, height: 15840 }, margin: { top: 1080, bottom: 1080, left: 1440, right: 1440 } } },
+      children: [
+        new D.Paragraph({ heading: D.HeadingLevel.TITLE, spacing: { after: 60 }, children: [new D.TextRun({ text: "Supermarket site plan", bold: true, size: 44 })] }),
+        P(`${d.city} · ${d.team || "Name not given"} · ${d.date}`, { run: { color: "5B6475" } }),
+        H("Our chosen site"),
+        new D.Paragraph({ children: [new D.ImageRun({ type: "jpg", data: d.imageBytes, transformation: { width: 624, height: 390 },
+          altText: { title: "Site picture", description: "Map view of the proposed supermarket", name: "site" } })] }),
+        P("The blue block is our proposed store. The dashed ring shows the area it serves. Red areas are food deserts.", { run: { italics: true, size: 18, color: "5B6475" } }),
+        table([
+          ["Location (latitude, longitude)", `${s.y.toFixed(6)}, ${s.x.toFixed(6)}`],
+          ["Neighborhood (census tract)", r.tract ? r.tract.name : "Unknown"],
+          ["Inside a food desert?", r.desertArea ? `Yes, Food desert ${r.desertArea}` : "No"]
+        ]),
+        H("Who the store would serve"),
+        new D.Paragraph({ spacing: { after: 120 }, children: [new D.TextRun({ text: fmt(r.gain), bold: true, size: 44, color: BLUE }),
+          new D.TextRun({ text: `  people would get a supermarket within ${mi}.` })] }),
+        table([
+          ["…of them living in food deserts", fmt(r.gainDesert)],
+          ["…households without a car", fmt(r.noCar)],
+          ["…people living in poverty", fmt(r.poor)],
+          [`Everyone living within ${mi}`, fmt(r.all)],
+          ["Nearest existing supermarket", `${fmtMi(r.nearestMi)} miles`],
+          ["Bus or rail stops within ¼ mile", r.stops == null ? "Not available" : fmt(r.stops)]
+        ]),
+        H("Why we chose this location"),
+        ...why,
+        H("The store to build"),
+        table([
+          ["Footprint", `${ft(s.length)} ft long × ${ft(s.width)} ft wide (${fmt(s.length * s.width * SQFT)} sq ft; ${Math.round(s.length)} m × ${Math.round(s.width)} m)`],
+          ["Height", `${ft(STORE_HEIGHT_M)} ft (one story)`],
+          ["Direction", `Long side turned ${s.rot % 180}° clockwise from east–west`],
+          ["Plot", plotTxt],
+          ["Minimum plot (rule of thumb)", `${fmtArea(3 * s.length * s.width)}: 3 × floor area, for parking and deliveries`]
+        ]),
+        H("Next: build it in SketchUp"),
+        ...steps,
+        P("You're done when:", { run: { bold: true } }),
+        ...doneList,
+        H("How the food desert was defined"),
+        P(`A neighborhood (census tract) is a food desert when at least ${d.rules.pov}% of people live in poverty and the nearest supermarket is more than ${mi} away${d.rules.incGrocery ? " (small grocery stores counted as supermarkets)" : ""}. People served assumes people are spread evenly across each neighborhood and uses straight-line distance.`),
+        P("Data: U.S. Census Bureau American Community Survey 5-year estimates (via ArcGIS Living Atlas); USDA SNAP retailer locations; U.S. DOT BTS National Transit Map; Esri 3D Buildings. For learning, not official designations.", { run: { size: 16, color: "5B6475" } }),
+        P(`Made with Grocery Store Site Challenge v${APP_VERSION}. Models: ${Object.values(MODELS).map((m) => `${m.name} v${m.v}`).join(" · ")}.`, { run: { size: 16, color: "5B6475" } })
+      ]
+    }]
+  });
+}
+
+async function makeSitePlan(kind) {
+  if (!state.store.placed) { setStatus("Place your store on the map first (step 2)."); return null; }
+  if (($("why").value || "").trim().length < 20 &&
+      !confirm("You have not written much about why you chose this location. Make the document anyway?")) return null;
+  toolsOff();
+  const btns = [$("wordBtn"), $("gdocBtn")]; btns.forEach((b) => (b.disabled = true));
+  const btn = kind === "word" ? $("wordBtn") : $("gdocBtn"), label = btn.textContent;
+  btn.textContent = "Making it…";
+  try {
+    const s = state.store;
+    const [D, img, stops] = await Promise.all([loadDocx(), takeSitePicture(), countStopsNear(s.x, s.y).catch(() => null)]);
+    const ev = { ...evaluateStore(s.x, s.y), stops };
+    const doc = buildSitePlanDoc(D, { city: state.centre.label, team: $("team").value.trim(), date: new Date().toLocaleDateString(),
+      why: $("why").value.trim(), store: { ...s }, eval: ev, plot: plotCheck(), rules: { ...state.rules }, imageBytes: dataUrlToBytes(img) });
+    const blob = await D.Packer.toBlob(doc);
+    const name = `supermarket-site-plan-${state.centre.label.split(/[,(]/)[0].trim().replace(/\W+/g, "-").toLowerCase()}.docx`;
+    const url = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    state.docMade = name;
+    $("handinText").innerHTML = `Your site plan is saved in your <b>Downloads</b> as <b>${esc(name)}</b>. Hand it in the way your teacher asks. Then build your store in SketchUp, using the steps at the end of the document.`;
+    updateProgress();
+    return name;
+  } catch (err) {
+    console.error(err);
+    setStatus(`Could not make the document: ${err.message}`, true);
+    return null;
+  } finally {
+    btn.textContent = label; btns.forEach((b) => (b.disabled = false));
+  }
+}
+$("wordBtn").addEventListener("click", async () => {
+  const name = await makeSitePlan("word");
+  if (name) setStatus(IS_CHROMEBOOK ? `Saved ${name} to your Downloads (open the Files app to find it). Now hand it in: Step 5.`
+                                     : `Saved ${name} to your Downloads. Now hand it in: Step 5.`);
+});
+$("gdocBtn").addEventListener("click", async () => {
+  const name = await makeSitePlan("gdoc");
+  if (!name) return;
+  $("gdocFile").textContent = name; $("gdocModal").classList.add("show");
+  $("gdocOpen").focus();   // move keyboard focus into the dialog
+});
+function closeGdoc() { $("gdocModal").classList.remove("show"); $("gdocBtn").focus(); }
+// Opening Drive is its own click, so pop-up blockers allow it.
+$("gdocOpen").addEventListener("click", () => { window.open("https://drive.google.com/drive/my-drive", "_blank"); closeGdoc(); });
+$("gdocClose").addEventListener("click", closeGdoc);
+$("gdocModal").addEventListener("keydown", (e) => {   // keep Tab inside the dialog; Escape closes it
+  if (e.key === "Escape") { e.stopPropagation(); closeGdoc(); return; }
+  if (e.key !== "Tab") return;
+  const f = [$("gdocOpen"), $("gdocClose")], i = f.indexOf(document.activeElement);
+  e.preventDefault(); f[(i + (e.shiftKey ? f.length - 1 : 1)) % f.length].focus();
+});
+
+// ---------------------------------------------------------------------------
+// Loading a city
+// ---------------------------------------------------------------------------
+async function analyse(lon, lat, label, fly = true) {
+  document.querySelectorAll("button, #community").forEach((b) => (b.disabled = true));
+  toolsOff();
+  state.centre = { lon, lat, label };
+  state.store.placed = false; Object.assign(state.store, DEFAULT_SIZE); state.best = null; state.plot = null;
+  state.explored = false; state.docMade = null; state.handedIn = false; $("handedIn").checked = false;
+  $("handinText").textContent = "When you have made your site plan, hand in the file the way your teacher asks. Then build your store in SketchUp, using the steps at the end of the document.";
+  plotLayer.removeAll(); drawMyStore(); renderFeedback();
+  $("storeCard").style.display = "none"; $("placeBtn").textContent = "🏪 Place my store";
+  $("summary").innerHTML = ""; $("desertList").innerHTML = ""; labelLayer.removeAll();
+  if (fly) view.goTo({ center: [lon, lat], zoom: 13, tilt: 45, heading: 0 }, { duration: 2000 }).catch(() => {});
+  try {
+    const key = `${lon.toFixed(4)},${lat.toFixed(4)}`;
+    const t0 = performance.now();
+    if (!state.cache[key]) {
+      setStatus("Loading neighborhoods and food stores…", true);
+      const [tracts, stores] = await Promise.all([loadTracts(lon, lat), loadStores(lon, lat)]);
+      state.cache[key] = { tracts, stores };
+    }
+    ({ tracts: state.tracts, stores: state.stores } = state.cache[key]);
+    if (!state.tracts.length) throw new Error("No census data found here. Is this location in the United States?");
+    console.info(`Data ready in ${Math.round(performance.now() - t0)} ms (${state.tracts.length} tracts, ${state.stores.length} stores)`);
+    buildSamples();
+    recompute();
+    setStatus(state.deserts.length ? `Found ${state.deserts.length} food desert area${state.deserts.length > 1 ? "s" : ""}. Click a red area to explore it.` : "No food deserts found here. Try another city.");
+  } catch (err) {
+    console.error(err);
+    setStatus(`Could not load data: ${err.message}`, true);
+  } finally {
+    document.querySelectorAll("button, #community").forEach((b) => (b.disabled = false));
+  }
+}
+function recompute() {
+  classifyTracts(); buildDeserts(); computeSampleAccess();
+  buildTractLayer(); buildStoreLayer(); drawDesertLabels();
+  renderLegend(); renderSummary(); updateProgress();
+  if (state.store.placed) { drawMyStore(); renderFeedback(); }
+}
+
+// ---------------------------------------------------------------------------
+// Controls
+// ---------------------------------------------------------------------------
+const sel = $("community");
+sel.innerHTML = COMMUNITIES.map((c, i) => `<option value="${i}">${c.name}</option>`).join("");
+sel.addEventListener("change", () => { const c = COMMUNITIES[sel.value]; analyse(c.lon, c.lat, c.name); });
+$("analyseHere").addEventListener("click", () => { const c = view.center; analyse(c.longitude, c.latitude, "the area on the map", false); });
+
+const setRuleText = () => {
+  document.querySelectorAll(".povRule").forEach((el) => (el.textContent = state.rules.pov));
+  document.querySelectorAll(".distRule").forEach((el) => (el.textContent = miWord(state.rules.distMi)));
+};
+$("pov").addEventListener("input", (e) => { $("povVal").textContent = e.target.value; });
+$("dist").addEventListener("input", (e) => { $("distVal").textContent = miWord(Number(e.target.value)); });
+["pov", "dist"].forEach((id) => $(id).addEventListener("change", () => {
+  state.rules.pov = Number($("pov").value); state.rules.distMi = Number($("dist").value);
+  setRuleText(); if (state.tracts.length) recompute();
+}));
+$("incGrocery").addEventListener("change", (e) => { state.rules.incGrocery = e.target.checked; if (state.tracts.length) recompute(); });
+$("colourBy").addEventListener("change", (e) => { state.colourBy = e.target.value; if (tractLayer) tractLayer.renderer = tractRenderer(); labelLayer.visible = e.target.value === "status"; renderLegend(); });
+$("lyrTracts").addEventListener("change", (e) => { if (tractLayer) tractLayer.visible = e.target.checked; labelLayer.visible = e.target.checked; });
+$("lyrStores").addEventListener("change", (e) => storeLayer && (storeLayer.visible = e.target.checked));
+$("lyrStops").addEventListener("change", (e) => stopLayer && (stopLayer.visible = e.target.checked));
+$("lyrRoutes").addEventListener("change", (e) => (routes.visible = e.target.checked));
+$("lyrBuildings").addEventListener("change", (e) => (buildings.visible = e.target.checked));
+$("basemap").addEventListener("change", (e) => (map.basemap = e.target.value));
+function setLegendOpen(open) {
+  $("maplegend").classList.toggle("collapsed", !open);
+  $("legendArrow").textContent = open ? "▾" : "▸";
+  $("legendToggle").setAttribute("aria-expanded", String(open));
+}
+$("legendToggle").addEventListener("click", () => setLegendOpen($("maplegend").classList.contains("collapsed")));
+if (window.matchMedia("(max-width: 820px)").matches) setLegendOpen(false);
+
+$("appVersion").textContent = APP_VERSION;
+$("verDesertTest").innerHTML = verTag("desertTest");
+$("versionTable").innerHTML = `<caption class="sr-only">App and model versions</caption><tr><td><b>App</b></td><td><b>v${APP_VERSION}</b></td><td></td></tr>` +
+  Object.values(MODELS).map((m) => `<tr><td>${m.name}</td><td>v${m.v}</td><td>${m.what}</td></tr>`).join("");
+// ---- Step 2 to 5 extras ----
+$("bigSteps").addEventListener("change", (e) => { $("moveLabel").textContent = e.target.checked ? "Move 100 ft" : "Move 10 ft"; });
+function updateWordCount() {
+  const n = wordsIn($("why").value);
+  $("wordCount").textContent = n >= WORDS_DONE ? `${n} words ✔` : `${n} words (aim for about ${WORDS_DONE}–60)`;
+  updateProgress();
+}
+$("why").addEventListener("input", updateWordCount);
+$("addNumbers").addEventListener("click", () => {   // puts the live numbers into the text, where the cursor is
+  const s = state.store; if (!s.placed) return;
+  const r = evaluateStore(s.x, s.y), ta = $("why");
+  const text = `A store here would serve ${fmt(r.gain)} people, including ${fmt(r.noCar)} households without a car. ` +
+    `It is ${r.desertArea ? `inside Food desert ${r.desertArea}` : "not inside a food desert"}, and the nearest supermarket now is ${fmtMi(r.nearestMi)} miles away. `;
+  const at = ta.selectionStart ?? ta.value.length, sep = at && !/\s$/.test(ta.value.slice(0, at)) ? " " : "";
+  ta.value = ta.value.slice(0, at) + sep + text + ta.value.slice(at);
+  ta.focus(); ta.selectionStart = ta.selectionEnd = at + sep.length + text.length;
+  updateWordCount();
+});
+$("frameBtn").addEventListener("click", () => {
+  const s = state.store;
+  if (!s.placed) { setStatus("Place your store on the map first (Step 2)."); return; }
+  toolsOff();
+  view.goTo({ center: [s.x, s.y], zoom: 16.5, tilt: 50, heading: 0 }, { duration: 1200 }).catch(() => {});
+});
+if (IS_CHROMEBOOK) {
+  $("docBtns").prepend($("gdocBtn"));
+  $("docNote").insertAdjacentHTML("afterbegin", "On a Chromebook, choose <b>Google Doc</b>. ");
+}
+$("handedIn").addEventListener("change", (e) => { state.handedIn = e.target.checked; updateProgress(); });
+
+// ---- Progress buttons jump to their step ----
+document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => {
+  if ($("panel").classList.contains("collapsed")) setPanelOpen(true);
+  const h2 = $(b.dataset.goto);
+  $("panelBody").scrollTo({ top: h2.offsetTop - 8, behavior: "smooth" });   // scroll only the panel, never the page
+  h2.focus({ preventScroll: true });
+}));
+
+// ---- Floating panel: hide/show, and keep the map's working area clear of it ----
+const smallScreen = window.matchMedia("(max-width: 820px)");
+function syncLayout() {
+  const panel = $("panel"), collapsed = panel.classList.contains("collapsed");
+  const pw = smallScreen.matches ? 0 : panel.offsetWidth + 24, ph = smallScreen.matches ? panel.offsetHeight : 0;
+  document.documentElement.style.setProperty("--pw", `${pw}px`);
+  document.documentElement.style.setProperty("--ph", `${ph}px`);
+  view.padding = { left: collapsed ? 0 : pw, bottom: ph, top: 0, right: 0 };   // map centre = middle of the visible map
+}
+function setPanelOpen(open) {
+  $("panel").classList.toggle("collapsed", !open);
+  $("panelToggle").setAttribute("aria-expanded", String(open));
+  $("panelToggle").textContent = open ? "Hide steps" : "Show steps";
+  syncLayout();
+}
+$("panelToggle").addEventListener("click", () => setPanelOpen($("panel").classList.contains("collapsed")));
+new ResizeObserver(syncLayout).observe($("panel"));
+smallScreen.addEventListener("change", syncLayout);
+syncLayout();
+
+renderLegend();
+updateProgress();
+const first = COMMUNITIES[0];
+analyse(first.lon, first.lat, first.name, false);   // the scene already opens on the first city
+</script>
+</body>
+</html>
