@@ -12,8 +12,8 @@
 
   Changelog
   0.9.0  2026-11-23  (lab) Floating panel over a full-screen map (bottom sheet on small screens), can be hidden.
-                     Progress bar (Explore, Place, Explain, Site plan, Hand in) that ticks itself off, with a "Next" line.
-                     New Step 5 Hand in. Google Doc first on Chromebooks. Map messages stay until the next action.
+                     Progress bar (Explore, Place, Explain, Site plan) that ticks itself off, with a "Next" line.
+                     Google Doc first on Chromebooks. Map messages stay until the next action.
                      Pop-ups use words (Yes/No) instead of coloured ticks. Details and Try-my-store-here for each food
                      desert area in the panel. Keyboard: numbers follow the map centre while placing; edit mode ends only
                      with Done or Esc; 100 ft steps. Plot check moved to an optional extra. Word count and Add my numbers
@@ -70,7 +70,6 @@
   .progress li.current button { border: 2px solid var(--ink); background: #fff; }
   .progress li.done button { background: #e3f4ea; border-color: #1a8f4a; color: #0f5c2e; }
   .next { margin: 0; font-size: 13px; background: #fff8d6; border: 1px solid #e3c95a; border-radius: 6px; padding: 6px 8px; }
-  .handin { border: 2px solid #1a8f4a; background: #f1faf4; }
   .wordcount { font-size: 12px; margin: 4px 0 0; }
   .adetail { font-size: 12.5px; background: var(--bg); border-radius: 6px; padding: 6px 8px; margin: 4px 0 2px; width: 100%; }
   .deserts li { flex-wrap: wrap; }
@@ -177,7 +176,6 @@
         <li data-p="2"><button data-goto="step2"><span class="pn">2</span><span class="pt">Place</span></button></li>
         <li data-p="3"><button data-goto="step3"><span class="pn">3</span><span class="pt">Explain</span></button></li>
         <li data-p="4"><button data-goto="step4"><span class="pn">4</span><span class="pt">Site plan</span></button></li>
-        <li data-p="5"><button data-goto="step5"><span class="pn">5</span><span class="pt">Hand in</span></button></li>
       </ol>
       <p id="nextLine" class="next" aria-live="polite"></p>
     </div>
@@ -266,12 +264,6 @@
     </div>
     <p class="small muted" style="margin:6px 0 0" id="docNote">Your site plan has your picture, numbers, reasons and the store size, ready for building it in <b>SketchUp</b>. It is made on this device. Nothing is sent anywhere.</p>
 
-    <!-- STEP 5 -->
-    <h2 id="step5" tabindex="-1"><span class="step" aria-hidden="true">5</span><span class="sr-only">Step 5: </span>Hand in your site plan</h2>
-    <div class="card" id="handinCard">
-      <p class="small" style="margin:0" id="handinText">When you have made your site plan, hand in the file the way your teacher asks. Then build your store in SketchUp, using the steps at the end of the document.</p>
-      <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="handedIn" /> I have handed in my site plan</label>
-    </div>
 
     <!-- EXTRAS -->
     <details class="card" style="margin-top:18px">
@@ -429,7 +421,7 @@ const state = {
   store: { placed: false, x: 0, y: 0, length: 70, width: 45, rot: 0 },
   best: null, carrying: false, carryFrom: null, plot: null, measure: null,
   rules: { pov: 20, distMi: 1, incGrocery: false }, colourBy: "status",
-  explored: false, docMade: null, handedIn: false
+  explored: false, docMade: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -452,7 +444,7 @@ document.addEventListener("keydown", hideStatusOnAction, true);
 const wordsIn = (s) => (s.trim().match(/\S+/g) || []).length;
 const WORDS_DONE = 30;
 function stepsDone() {
-  return { 1: state.explored, 2: state.store.placed, 3: wordsIn($("why").value) >= WORDS_DONE, 4: !!state.docMade, 5: state.handedIn };
+  return { 1: state.explored, 2: state.store.placed, 3: wordsIn($("why").value) >= WORDS_DONE, 4: !!state.docMade };
 }
 function nextText() {
   const d = stepsDone();
@@ -463,12 +455,11 @@ function nextText() {
   if (state.editing) return "Next: fit the store to the land, then press Done on the map.";
   if (!d[3]) return `Next: write why you chose this spot (Step 3). You have ${wordsIn($("why").value)} of about ${WORDS_DONE} words.`;
   if (!d[4]) return "Next: make your site plan (Step 4).";
-  if (!d[5]) return "Next: hand in your site plan file, then tick the box in Step 5.";
-  return "All done! Now build your store in SketchUp, using the steps in your document.";
+  return `Site plan made${state.docMade ? ` (${state.docMade}, in your Downloads)` : ""}. Next: build your store in SketchUp, using the steps at the end of the document.`;
 }
 function updateProgress() {
   const d = stepsDone(); let current = 0;
-  for (let i = 1; i <= 5; i++) if (!d[i]) { current = i; break; }
+  for (let i = 1; i <= 4; i++) if (!d[i]) { current = i; break; }
   document.querySelectorAll("#progress li").forEach((li) => {
     const i = +li.dataset.p, btn = li.querySelector("button");
     li.classList.toggle("done", !!d[i]); li.classList.toggle("current", i === current);
@@ -1476,7 +1467,6 @@ async function makeSitePlan(kind) {
     a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 60000);
     state.docMade = name;
-    $("handinText").innerHTML = `Your site plan is saved in your <b>Downloads</b> as <b>${esc(name)}</b>. Hand it in the way your teacher asks. Then build your store in SketchUp, using the steps at the end of the document.`;
     updateProgress();
     return name;
   } catch (err) {
@@ -1489,8 +1479,7 @@ async function makeSitePlan(kind) {
 }
 $("wordBtn").addEventListener("click", async () => {
   const name = await makeSitePlan("word");
-  if (name) setStatus(IS_CHROMEBOOK ? `Saved ${name} to your Downloads (open the Files app to find it). Now hand it in: Step 5.`
-                                     : `Saved ${name} to your Downloads. Now hand it in: Step 5.`);
+  if (name) setStatus(IS_CHROMEBOOK ? `Saved ${name} to your Downloads (open the Files app to find it).` : `Saved ${name} to your Downloads.`);
 });
 $("gdocBtn").addEventListener("click", async () => {
   const name = await makeSitePlan("gdoc");
@@ -1517,8 +1506,7 @@ async function analyse(lon, lat, label, fly = true) {
   toolsOff();
   state.centre = { lon, lat, label };
   state.store.placed = false; Object.assign(state.store, DEFAULT_SIZE); state.best = null; state.plot = null;
-  state.explored = false; state.docMade = null; state.handedIn = false; $("handedIn").checked = false;
-  $("handinText").textContent = "When you have made your site plan, hand in the file the way your teacher asks. Then build your store in SketchUp, using the steps at the end of the document.";
+  state.explored = false; state.docMade = null;
   plotLayer.removeAll(); drawMyStore(); renderFeedback();
   $("storeCard").style.display = "none"; $("placeBtn").textContent = "🏪 Place my store";
   $("summary").innerHTML = ""; $("desertList").innerHTML = ""; labelLayer.removeAll();
@@ -1617,7 +1605,6 @@ if (IS_CHROMEBOOK) {
   $("docBtns").prepend($("gdocBtn"));
   $("docNote").insertAdjacentHTML("afterbegin", "On a Chromebook, choose <b>Google Doc</b>. ");
 }
-$("handedIn").addEventListener("change", (e) => { state.handedIn = e.target.checked; updateProgress(); });
 
 // ---- Progress buttons jump to their step ----
 document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => {
