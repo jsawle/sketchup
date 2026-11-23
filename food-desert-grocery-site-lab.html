@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   Food Deserts: Grocery Store Design Challenge
-  Version 0.9.2-lab (2026-11-23)  LAB COPY: try changes here before they go into food-desert-grocery-site.html
+  Version 0.9.3-lab (2026-11-23)  LAB COPY: try changes here before they go into food-desert-grocery-site.html
 
   Model versions (bump when a model's maths or data handling changes)
     Food desert test          1.0.0   poverty % and straight-line distance to nearest supermarket, per census tract
@@ -11,6 +11,8 @@
     Minimum plot rule         1.0.0   3 x store floor area
 
   Changelog
+  0.9.3  2026-11-23  (lab) Step 3 has no word limit: "3–5 sentences (30–60 words)" and the word count removed;
+                     the step ticks once something is written.
   0.9.2  2026-11-23  (lab) Renamed "Food Deserts: Grocery Store Design Challenge" (was Grocery Store Site Challenge).
   0.9.1  2026-11-23  (lab) "More map options" removed (colour-by, layer on/off, basemap list). New Satellite / Street map
                      switch on the map; Street map is the OpenStreetMap 3D basemap (osm-3d).
@@ -41,7 +43,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-<meta name="version" content="0.9.2-lab" />
+<meta name="version" content="0.9.3-lab" />
 <title>Food Deserts: Grocery Store Design Challenge (Lab)</title>
 <!-- ArcGIS Maps SDK for JavaScript 5.1 (components + core, single entry point). No API key needed: all layers are public. -->
 <script type="module" src="https://js.arcgis.com/5.1/"></script>
@@ -246,7 +248,7 @@
 
     <!-- STEP 3 -->
     <h2 id="step3" tabindex="-1"><span class="step" aria-hidden="true">3</span><span class="sr-only">Step 3: </span>Explain your choice <span class="mins">about 10 min</span></h2>
-    <p class="small" style="margin:0" id="whyHelp">Write 3–5 sentences (about 30–60 words). Use numbers from the box on the map. You could start with:</p>
+    <p class="small" style="margin:0" id="whyHelp">Explain your thinking in as much detail as you need. Use numbers from the box on the map. You could start with:</p>
     <ul class="starters">
       <li>We chose this location because…</li>
       <li>A store here would serve ___ people, including ___ households without a car.</li>
@@ -254,9 +256,9 @@
       <li>One problem with this site is…</li>
     </ul>
     <label class="small" for="why" style="display:block">Why we chose this location</label>
-    <textarea id="why" aria-describedby="whyHelp wordCount" placeholder="We chose this location because…"></textarea>
+    <textarea id="why" aria-describedby="whyHelp" placeholder="We chose this location because…"></textarea>
     <div class="row" style="margin-top:4px">
-      <p id="wordCount" class="wordcount muted" style="flex:2">0 words</p>
+      <span style="flex:2"></span>
       <button id="addNumbers" class="ghost" style="flex:none" disabled>Add my numbers</button>
     </div>
     <label class="small" for="team" style="margin-top:6px;display:block">Your name or team</label>
@@ -357,7 +359,7 @@
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
-const APP_VERSION = "0.9.2-lab";
+const APP_VERSION = "0.9.3-lab";
 const IS_CHROMEBOOK = /\bCrOS\b/.test(navigator.userAgent);   // Chromebooks get the Google Doc button first   // keep in step with the changelog at the top of this file
 const MODELS = {               // bump a model's version whenever its maths or data handling changes
   desertTest:   { name: "Food desert test",         v: "1.0.0", what: "Poverty rate and straight-line distance from each neighborhood's center to the nearest supermarket" },
@@ -426,10 +428,10 @@ document.addEventListener("pointerdown", hideStatusOnAction, true);
 document.addEventListener("keydown", hideStatusOnAction, true);
 
 // ---- Progress: which steps are done, and what to do next ----
-const wordsIn = (s) => (s.trim().match(/\S+/g) || []).length;
-const WORDS_DONE = 30;
+// Step 3 has no word limit; it counts as done once something has been written (20+ characters, as the site plan check).
+const hasReasons = () => $("why").value.trim().length >= 20;
 function stepsDone() {
-  return { 1: state.explored, 2: state.store.placed, 3: wordsIn($("why").value) >= WORDS_DONE, 4: !!state.docMade };
+  return { 1: state.explored, 2: state.store.placed, 3: hasReasons(), 4: !!state.docMade };
 }
 function nextText() {
   const d = stepsDone();
@@ -438,7 +440,7 @@ function nextText() {
   if (state.carrying) return "Next: move the store around and watch the numbers. Click to put it down.";
   if (!d[2]) return "Next: choose the food desert you want to help, then press Place my store (Step 2).";
   if (state.editing) return "Next: fit the store to the land, then press Done on the map.";
-  if (!d[3]) return `Next: write why you chose this spot (Step 3). You have ${wordsIn($("why").value)} of about ${WORDS_DONE} words.`;
+  if (!d[3]) return "Next: explain why you chose this spot (Step 3).";
   if (!d[4]) return "Next: make your site plan (Step 4).";
   return `Site plan made${state.docMade ? ` (${state.docMade}, in your Downloads)` : ""}. Next: build your store in SketchUp, using the steps at the end of the document.`;
 }
@@ -1576,11 +1578,7 @@ $("versionTable").innerHTML = `<caption class="sr-only">App and model versions</
   Object.values(MODELS).map((m) => `<tr><td>${m.name}</td><td>v${m.v}</td><td>${m.what}</td></tr>`).join("");
 // ---- Step 2 to 5 extras ----
 $("bigSteps").addEventListener("change", (e) => { $("moveLabel").textContent = e.target.checked ? "Move 100 ft" : "Move 10 ft"; });
-function updateWordCount() {
-  const n = wordsIn($("why").value);
-  $("wordCount").textContent = n >= WORDS_DONE ? `${n} words ✔` : `${n} words (aim for about ${WORDS_DONE}–60)`;
-  updateProgress();
-}
+function updateWordCount() { updateProgress(); }   // no word count shown: Step 3 has no length limit
 $("why").addEventListener("input", updateWordCount);
 $("addNumbers").addEventListener("click", () => {   // puts the live numbers into the text, where the cursor is
   const s = state.store; if (!s.placed) return;
