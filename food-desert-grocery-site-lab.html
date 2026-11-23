@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
-  Grocery Store Site Challenge
-  Version 0.9.1-lab (2026-11-23)  LAB COPY: try changes here before they go into food-desert-grocery-site.html
+  Food Deserts: Grocery Store Design Challenge
+  Version 0.9.2-lab (2026-11-23)  LAB COPY: try changes here before they go into food-desert-grocery-site.html
 
   Model versions (bump when a model's maths or data handling changes)
     Food desert test          1.0.0   poverty % and straight-line distance to nearest supermarket, per census tract
@@ -11,6 +11,7 @@
     Minimum plot rule         1.0.0   3 x store floor area
 
   Changelog
+  0.9.2  2026-11-23  (lab) Renamed "Food Deserts: Grocery Store Design Challenge" (was Grocery Store Site Challenge).
   0.9.1  2026-11-23  (lab) "More map options" removed (colour-by, layer on/off, basemap list). New Satellite / Street map
                      switch on the map; Street map is the OpenStreetMap 3D basemap (osm-3d).
   0.9.0  2026-11-23  (lab) Floating panel over a full-screen map (bottom sheet on small screens), can be hidden.
@@ -40,8 +41,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-<meta name="version" content="0.9.1-lab" />
-<title>Grocery Store Site Challenge (Lab)</title>
+<meta name="version" content="0.9.2-lab" />
+<title>Food Deserts: Grocery Store Design Challenge (Lab)</title>
 <!-- ArcGIS Maps SDK for JavaScript 5.1 (components + core, single entry point). No API key needed: all layers are public. -->
 <script type="module" src="https://js.arcgis.com/5.1/"></script>
 <style>
@@ -65,6 +66,7 @@
   .headrow { display: flex; align-items: center; gap: 8px; } .headrow h1 { flex: 1; }
   .lab { font-size: 10.5px; font-weight: 700; background: #f28c28; color: #1d2433; border-radius: 6px; padding: 1px 6px; vertical-align: middle; }
   #panelToggle { padding: 4px 10px; font-size: 12.5px; flex: none; }
+  h1 .subtitle { display: block; font-size: 14px; font-weight: 600; color: var(--muted); margin-top: 2px; }
   .progress { list-style: none; display: flex; gap: 4px; padding: 0; margin: 10px 0 6px; }
   .progress li { flex: 1; }
   .progress button { width: 100%; padding: 5px 2px; font-size: 11.5px; line-height: 1.2; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; }
@@ -174,7 +176,7 @@
   <aside id="panel" aria-label="Steps">
     <div id="panelHead">
       <div class="headrow">
-        <h1>Grocery Store Site Challenge <span class="lab">LAB</span></h1>
+        <h1>Food Deserts <span class="lab">LAB</span><span class="subtitle">Grocery Store Design Challenge</span></h1>
         <button id="panelToggle" class="ghost" aria-expanded="true" aria-controls="panelBody">Hide steps</button>
       </div>
       <ol id="progress" class="progress" aria-label="Your progress">
@@ -355,7 +357,7 @@
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
-const APP_VERSION = "0.9.1-lab";
+const APP_VERSION = "0.9.2-lab";
 const IS_CHROMEBOOK = /\bCrOS\b/.test(navigator.userAgent);   // Chromebooks get the Google Doc button first   // keep in step with the changelog at the top of this file
 const MODELS = {               // bump a model's version whenever its maths or data handling changes
   desertTest:   { name: "Food desert test",         v: "1.0.0", what: "Poverty rate and straight-line distance from each neighborhood's center to the nearest supermarket" },
@@ -365,7 +367,7 @@ const MODELS = {               // bump a model's version whenever its maths or d
   plotRule:     { name: "Minimum plot rule",        v: "1.0.0", what: "Plot must be at least 3 × the store floor area" }
 };
 const verTag = (k) => `<span class="ver" title="${MODELS[k].name} model">${MODELS[k].name} v${MODELS[k].v}</span>`;
-console.info(`Grocery Store Site Challenge v${APP_VERSION}`);
+console.info(`Food Deserts: Grocery Store Design Challenge v${APP_VERSION}`);
 const COMMUNITIES = [
   { name: "Dallas, Texas (South Dallas)", lon: -96.752, lat: 32.765 },
   { name: "Baltimore, Maryland (West Baltimore)", lon: -76.643, lat: 39.300 },
@@ -1380,7 +1382,7 @@ function buildSitePlanDoc(D, d) {
   ].map((t) => P(`☐  ${t}`, { indent: { left: 360 } }));
 
   return new D.Document({
-    creator: d.team || "Student", title: `Supermarket site plan – ${d.city}`, description: `Grocery Store Site Challenge v${APP_VERSION}`,
+    creator: d.team || "Student", title: `Supermarket site plan – ${d.city}`, description: `Food Deserts: Grocery Store Design Challenge v${APP_VERSION}`,
     styles: { default: { document: { run: { font: "Arial", size: 22 } } } },
     sections: [{
       properties: { page: { size: { width: 12240, height: 15840 }, margin: { top: 1080, bottom: 1080, left: 1440, right: 1440 } } },
@@ -1424,7 +1426,7 @@ function buildSitePlanDoc(D, d) {
         H("How the food desert was defined"),
         P(`A neighborhood (census tract) is a food desert when at least ${d.rules.pov}% of people live in poverty and the nearest supermarket is more than ${mi} away${d.rules.incGrocery ? " (small grocery stores counted as supermarkets)" : ""}. People served assumes people are spread evenly across each neighborhood and uses straight-line distance.`),
         P("Data: U.S. Census Bureau American Community Survey 5-year estimates (via ArcGIS Living Atlas); USDA SNAP retailer locations; U.S. DOT BTS National Transit Map; Esri 3D Buildings. For learning, not official designations.", { run: { size: 16, color: "5B6475" } }),
-        P(`Made with Grocery Store Site Challenge v${APP_VERSION}. Models: ${Object.values(MODELS).map((m) => `${m.name} v${m.v}`).join(" · ")}.`, { run: { size: 16, color: "5B6475" } })
+        P(`Made with Food Deserts: Grocery Store Design Challenge v${APP_VERSION}. Models: ${Object.values(MODELS).map((m) => `${m.name} v${m.v}`).join(" · ")}.`, { run: { size: 16, color: "5B6475" } })
       ]
     }]
   });
