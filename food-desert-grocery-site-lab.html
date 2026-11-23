@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   Grocery Store Site Challenge
-  Version 0.9.0-lab (2026-11-23)  LAB COPY: try changes here before they go into food-desert-grocery-site.html
+  Version 0.9.1-lab (2026-11-23)  LAB COPY: try changes here before they go into food-desert-grocery-site.html
 
   Model versions (bump when a model's maths or data handling changes)
     Food desert test          1.0.0   poverty % and straight-line distance to nearest supermarket, per census tract
@@ -11,6 +11,8 @@
     Minimum plot rule         1.0.0   3 x store floor area
 
   Changelog
+  0.9.1  2026-11-23  (lab) "More map options" removed (colour-by, layer on/off, basemap list). New Satellite / Street map
+                     switch on the map; Street map is the OpenStreetMap 3D basemap (osm-3d).
   0.9.0  2026-11-23  (lab) Floating panel over a full-screen map (bottom sheet on small screens), can be hidden.
                      Progress bar (Explore, Place, Explain, Site plan) that ticks itself off, with a "Next" line.
                      Google Doc first on Chromebooks. Map messages stay until the next action.
@@ -38,7 +40,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-<meta name="version" content="0.9.0-lab" />
+<meta name="version" content="0.9.1-lab" />
 <title>Grocery Store Site Challenge (Lab)</title>
 <!-- ArcGIS Maps SDK for JavaScript 5.1 (components + core, single entry point). No API key needed: all layers are public. -->
 <script type="module" src="https://js.arcgis.com/5.1/"></script>
@@ -146,6 +148,9 @@
   .numrow label { font-size: 12px; display: block; }
   .numrow input { width: 100%; padding: 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 13.5px; }
   #credit { position: absolute; right: 12px; bottom: 30px; z-index: 4; background: rgba(255,255,255,.92); color: var(--ink); font-size: 11.5px; padding: 3px 8px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+  #basemapSwitch { position: absolute; z-index: 5; top: 15px; right: 60px; display: flex; background: #fff; border-radius: 8px; box-shadow: 0 1px 6px rgba(0,0,0,.3); padding: 3px; gap: 3px; }
+  #basemapSwitch button { background: #fff; color: var(--ink); border: 0; padding: 6px 12px; font-size: 13px; border-radius: 6px; }
+  #basemapSwitch button[aria-pressed="true"] { background: var(--ink); color: #fff; font-weight: 600; }
   /* Things on the map keep clear of the floating panel */
   #feedback { left: calc(var(--pw) + 12px); }
   #status { left: calc(50% + var(--pw) / 2); top: 12px; }
@@ -157,7 +162,8 @@
     #panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 50vh; border-radius: 14px 14px 0 0; }
     #panel.collapsed { width: auto; max-width: none; bottom: 0; }
     #feedback { width: 220px; left: 12px; } #feedback .bignum { font-size: 24px; }
-    #maplegend { max-width: 190px; top: 170px; bottom: auto; max-height: calc(100% - var(--ph) - 190px); }
+    #maplegend { max-width: 190px; top: 220px; bottom: auto; max-height: calc(100% - var(--ph) - 240px); }
+    #basemapSwitch { top: 172px; right: 12px; }
     #status { left: 50%; top: auto; bottom: calc(var(--ph) + 110px); }
     .hintbar { left: 50%; width: 94%; }
   }
@@ -278,33 +284,6 @@
       </div>
     </details>
     <details class="card">
-      <summary>More map options</summary>
-      <div style="margin-top:6px">
-        <label class="small" for="colourBy">Color neighborhoods by</label>
-        <select id="colourBy">
-          <option value="status">Food desert or not</option>
-          <option value="pov">Poverty rate (%)</option>
-          <option value="noveh">Households without a car (%)</option>
-          <option value="dist">Distance to nearest supermarket (miles)</option>
-        </select>
-        <p class="small" style="margin:10px 0 2px" id="showOnMap"><b>Show on map</b></p>
-        <div role="group" aria-labelledby="showOnMap">
-        <label><input type="checkbox" id="lyrTracts" checked /> Neighborhoods</label><br />
-        <label><input type="checkbox" id="lyrStores" checked /> Food stores</label><br />
-        <label><input type="checkbox" id="lyrStops" checked /> Bus and rail stops</label><br />
-        <label><input type="checkbox" id="lyrRoutes" checked /> Bus and rail routes</label><br />
-        <label><input type="checkbox" id="lyrBuildings" checked /> 3D buildings</label><br />
-        </div>
-        <label class="small" for="basemap" style="display:block;margin-top:6px">Basemap</label>
-        <select id="basemap">
-          <option value="hybrid">Imagery with labels</option>
-          <option value="satellite">Imagery</option>
-          <option value="gray-vector">Light gray</option>
-          <option value="topo-vector">Topographic</option>
-        </select>
-      </div>
-    </details>
-    <details class="card">
       <summary>About the data and method</summary>
       <div class="small" style="margin-top:6px">
         <p><b>Neighborhoods:</b> census tracts from the U.S. Census Bureau American Community Survey 5-year estimates, via ArcGIS Living Atlas (tables B17020 poverty and B08201 vehicles available). Estimates have margins of error.</p>
@@ -364,6 +343,10 @@
       <button id="legendToggle" class="legend-head" aria-expanded="true" aria-controls="legend">Legend <span id="legendArrow" aria-hidden="true">▾</span></button>
       <div id="legend" class="legend"></div>
     </div>
+    <div id="basemapSwitch" role="group" aria-label="Background map">
+      <button data-bm="hybrid" aria-pressed="true">Satellite</button>
+      <button data-bm="osm-3d" aria-pressed="false" title="OpenStreetMap: street names, shops, schools and parks">Street map</button>
+    </div>
     <div id="credit">Created by Jason Sawle</div>
   </div>
 </div>
@@ -372,7 +355,7 @@
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
-const APP_VERSION = "0.9.0-lab";
+const APP_VERSION = "0.9.1-lab";
 const IS_CHROMEBOOK = /\bCrOS\b/.test(navigator.userAgent);   // Chromebooks get the Google Doc button first   // keep in step with the changelog at the top of this file
 const MODELS = {               // bump a model's version whenever its maths or data handling changes
   desertTest:   { name: "Food desert test",         v: "1.0.0", what: "Poverty rate and straight-line distance from each neighborhood's center to the nearest supermarket" },
@@ -823,7 +806,7 @@ function buildTractLayer() {
   }));
   tractLayer = new FeatureLayer({
     title: "Neighborhoods", source: graphics, objectIdField: "OBJECTID", geometryType: "polygon", spatialReference: SR,
-    elevationInfo: { mode: "on-the-ground" }, visible: $("lyrTracts").checked, outFields: ["*"],
+    elevationInfo: { mode: "on-the-ground" }, outFields: ["*"],
     fields: [{ name: "OBJECTID", type: "oid" }, { name: "NAME", type: "string" }, { name: "pop", type: "integer" }, { name: "poor", type: "integer" },
       { name: "povPct", type: "double" }, { name: "noveh", type: "integer" }, { name: "novehPct", type: "double" },
       { name: "distMi", type: "double" }, { name: "isDesert", type: "string" }, { name: "desertArea", type: "integer" }],
@@ -855,7 +838,7 @@ function buildStoreLayer() {
     symbolLayers: [{ type: "icon", resource: { primitive: "circle" }, material: { color }, size, outline: { color: [255, 255, 255, 1], size: 1.5 } }] });
   storeLayer = new FeatureLayer({
     title: "Food stores", source: graphics, objectIdField: "OBJECTID", geometryType: "point", spatialReference: SR,
-    elevationInfo: { mode: "relative-to-scene" }, visible: $("lyrStores").checked,
+    elevationInfo: { mode: "relative-to-scene" },
     fields: [{ name: "OBJECTID", type: "oid" }, { name: "name", type: "string" }, { name: "type", type: "string" }, { name: "address", type: "string" }, { name: "cat", type: "string" }],
     renderer: { type: "unique-value", field: "cat", defaultSymbol: icon("#8a8f98", 7), uniqueValueInfos: [
       { value: "full", label: "Supermarket", symbol: icon("#1a8f4a", 16) }, { value: "grocery", label: "Small grocery store", symbol: icon("#6fbf73", 10) },
@@ -1558,13 +1541,25 @@ $("dist").addEventListener("input", (e) => { $("distVal").textContent = miWord(N
   setRuleText(); if (state.tracts.length) recompute();
 }));
 $("incGrocery").addEventListener("change", (e) => { state.rules.incGrocery = e.target.checked; if (state.tracts.length) recompute(); });
-$("colourBy").addEventListener("change", (e) => { state.colourBy = e.target.value; if (tractLayer) tractLayer.renderer = tractRenderer(); labelLayer.visible = e.target.value === "status"; renderLegend(); });
-$("lyrTracts").addEventListener("change", (e) => { if (tractLayer) tractLayer.visible = e.target.checked; labelLayer.visible = e.target.checked; });
-$("lyrStores").addEventListener("change", (e) => storeLayer && (storeLayer.visible = e.target.checked));
-$("lyrStops").addEventListener("change", (e) => stopLayer && (stopLayer.visible = e.target.checked));
-$("lyrRoutes").addEventListener("change", (e) => (routes.visible = e.target.checked));
-$("lyrBuildings").addEventListener("change", (e) => (buildings.visible = e.target.checked));
-$("basemap").addEventListener("change", (e) => (map.basemap = e.target.value));
+// Background map: satellite (default) or OpenStreetMap, which shows more local detail (street names, shops, schools, parks).
+// "osm-3d" is the SDK's OpenStreetMap 3D basemap, which brings its own 3D buildings, so the Esri 3D buildings are hidden with it.
+async function setBackground(id) {
+  const prev = map.basemap;
+  document.querySelectorAll("[data-bm]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.bm === id)));
+  try {
+    map.basemap = id;
+    await map.basemap.load();
+    buildings.visible = id !== "osm-3d";
+  } catch (err) {
+    console.error(err);
+    map.basemap = prev; buildings.visible = true;
+    document.querySelectorAll("[data-bm]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.bm === "hybrid")));
+    setStatus("The street map could not be loaded here. Showing the satellite map.");
+  }
+}
+document.querySelectorAll("[data-bm]").forEach((b) => b.addEventListener("click", () => {
+  if (b.getAttribute("aria-pressed") !== "true") setBackground(b.dataset.bm);
+}));
 function setLegendOpen(open) {
   $("maplegend").classList.toggle("collapsed", !open);
   $("legendArrow").textContent = open ? "▾" : "▸";
